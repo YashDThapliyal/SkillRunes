@@ -20,8 +20,11 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Install build
-        run: python -m pip install --upgrade build
+      - name: Install dependencies
+        run: python -m pip install --upgrade build pytest .[dev]
+
+      - name: Run tests
+        run: python -m pytest
 
       - name: Build package
         run: python -m build
