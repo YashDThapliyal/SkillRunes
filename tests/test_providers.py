@@ -12,7 +12,6 @@ from skillrunes.ingest.codex import CODEX_NOT_IMPLEMENTED_MESSAGE, CodexProvider
 
 def test_provider_selection_defaults_to_claude_code(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SKILLRUNES_PROVIDER", raising=False)
-    monkeypatch.delenv("AGENTLENS_PROVIDER", raising=False)
 
     provider = get_provider()
 
@@ -22,28 +21,6 @@ def test_provider_selection_defaults_to_claude_code(monkeypatch: pytest.MonkeyPa
 
 def test_provider_selection_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SKILLRUNES_PROVIDER", "codex")
-
-    provider = get_provider()
-
-    assert provider.name == "codex"
-
-
-def test_new_provider_env_takes_precedence_over_legacy_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("SKILLRUNES_PROVIDER", "claude_code")
-    monkeypatch.setenv("AGENTLENS_PROVIDER", "codex")
-
-    provider = get_provider()
-
-    assert provider.name == "claude_code"
-
-
-def test_provider_selection_falls_back_to_legacy_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.delenv("SKILLRUNES_PROVIDER", raising=False)
-    monkeypatch.setenv("AGENTLENS_PROVIDER", "codex")
 
     provider = get_provider()
 

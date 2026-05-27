@@ -8,8 +8,7 @@ Public surface:
     find_new_sessions(cwd)    → list[Path]
 
 The active provider defaults to Claude Code and can be selected with
-SKILLRUNES_PROVIDER or the CLI --provider option. AGENTLENS_PROVIDER is read
-only as a backward-compatible fallback when SKILLRUNES_PROVIDER is unset.
+SKILLRUNES_PROVIDER or the CLI --provider option.
 """
 
 import os
@@ -17,7 +16,6 @@ from pathlib import Path
 
 from skillrunes.config import (
     DEFAULT_PROVIDER,
-    LEGACY_PROVIDER_ENV_VAR,
     PROVIDER_ENV_VAR,
     SUPPORTED_PROVIDERS,
 )
@@ -37,7 +35,6 @@ def resolve_provider_name(provider_name: str | None = None) -> str:
     selected = (
         provider_name
         or os.environ.get(PROVIDER_ENV_VAR)
-        or os.environ.get(LEGACY_PROVIDER_ENV_VAR)
         or DEFAULT_PROVIDER
     ).strip()
     if selected not in SUPPORTED_PROVIDERS:

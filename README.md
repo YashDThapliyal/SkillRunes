@@ -47,9 +47,6 @@ Provider selection can also be configured with:
 export SKILLRUNES_PROVIDER=claude_code
 ```
 
-`AGENTLENS_PROVIDER` is still read as a backward-compatible fallback when
-`SKILLRUNES_PROVIDER` is unset.
-
 Supported provider names today:
 
 - `claude_code` — supported, default

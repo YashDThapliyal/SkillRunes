@@ -6,7 +6,6 @@ nothing is hardcoded elsewhere in the codebase.
 
 # Transcript provider selection
 PROVIDER_ENV_VAR = "SKILLRUNES_PROVIDER"
-LEGACY_PROVIDER_ENV_VAR = "AGENTLENS_PROVIDER"
 DEFAULT_PROVIDER = "claude_code"
 SUPPORTED_PROVIDERS = ("claude_code", "codex")
 
