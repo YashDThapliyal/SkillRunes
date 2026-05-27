@@ -41,10 +41,6 @@ skillrunes = "skillrunes.__main__:main"
 [tool.hatch.build.targets.wheel]
 packages = ["skillrunes"]
 
-[tool.hatch.build.targets.wheel.force-include]
-"skillrunes/dashboard/templates" = "skillrunes/dashboard/templates"
-"skillrunes/dashboard/static" = "skillrunes/dashboard/static"
-
 [tool.hatch.build.targets.sdist]
 include = [
     "skillrunes/",
