@@ -1,4 +1,5 @@
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 import pytest
 from typer.testing import CliRunner
@@ -75,7 +76,8 @@ def test_cli_displays_active_provider(monkeypatch: pytest.MonkeyPatch) -> None:
     runner = CliRunner()
     monkeypatch.setattr(cli, "get_provider", lambda provider_name=None: _NoSessionsProvider())
 
-    with runner.isolated_filesystem():
+    with TemporaryDirectory() as tmpdir:
+        monkeypatch.chdir(tmpdir)
         result = runner.invoke(cli.app, ["run", "--provider", "claude_code"])
 
     assert result.exit_code == 0
