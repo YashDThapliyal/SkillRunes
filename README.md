@@ -1,3 +1,5 @@
+<img width="1024" height="572" alt="image" src="https://github.com/user-attachments/assets/840c760a-7e42-4cf6-b4df-9a37061ab031" />
+
 # SkillRunes
 
 Analyse coding-agent session transcripts and recursively improve a `SKILL.md` file.
