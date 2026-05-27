@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SkillRunes</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #0f1117;
+      --surface: #161b22;
+      --border:  #21262d;
+      --text:    #e6edf3;
+      --muted:   #7d8590;
+      --green:   #3fb950;
+      --yellow:  #d29922;
+      --red:     #f85149;
+      --blue:    #58a6ff;
+      --purple:  #bc8cff;
+      --r: 6px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 24px 28px;
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    header {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 28px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+    }
+    header h1 { font-size: 17px; font-weight: 600; }
+    header .sub { color: var(--muted); font-size: 12px; }
+    header .count { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+    section { margin-bottom: 32px; }
+
+    h2 {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r);
+    }
+
+    .panel-pad { padding: 18px 20px; }
+
+    /* ── Cards ── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 10px;
+    }
+    .card { padding: 15px 16px; }
+    .card .lbl { font-size: 11px; color: var(--muted); margin-bottom: 5px; }
+    .card .val { font-size: 24px; font-weight: 700; line-height: 1; }
+    .card .val.green  { color: var(--green);  }
+    .card .val.yellow { color: var(--yellow); }
+    .card .val.blue   { color: var(--blue);   }
+    .card .val.purple { color: var(--purple); }
+    .card .val.red    { color: var(--red);    }
+    .card .sub-val    { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    /* ── Chart grid ── */
+    .chart-grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+    .chart-grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    @media (max-width: 800px) {
+      .chart-grid-3, .chart-grid-2 { grid-template-columns: 1fr; }
+    }
+
+    .chart-panel { padding: 16px 18px; }
+    .chart-panel h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .chart-panel .chart-sub {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+    .chart-panel canvas { max-height: 200px; }
+    .chart-panel.tall canvas { max-height: 260px; }
+
+    /* ── Donut ── */
+    .donut-row {
+      display: grid;
+      grid-template-columns: 160px 1fr;
+      gap: 20px;
+      align-items: center;
+    }
+    .donut-row canvas { max-width: 160px; max-height: 160px; }
+    .legend { display: flex; flex-direction: column; gap: 8px; }
+    .leg-item { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+    .leg-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+    .leg-n { margin-left: auto; font-weight: 600; }
+    .leg-pct { color: var(--muted); font-size: 11px; min-width: 30px; text-align: right; }
+
+    /* ── Failure list ── */
+    .fail-list { display: flex; flex-direction: column; gap: 6px; }
+    .fail-item {
+      display: flex;
+      gap: 10px;
+      padding: 7px 10px;
+      background: rgba(248,81,73,.05);
+      border-left: 2px solid var(--red);
+      border-radius: 0 4px 4px 0;
+      font-size: 12px;
+      line-height: 1.4;
+    }
+    .fail-num { color: var(--red); font-weight: 700; min-width: 14px; flex-shrink: 0; }
+
+    /* ── Session table ── */
+    .tbl { width: 100%; border-collapse: collapse; }
+    .tbl th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+      padding: 0 12px 8px;
+      border-bottom: 1px solid var(--border);
+    }
+    .tbl td { padding: 8px 12px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+    .tbl tr:last-child td { border-bottom: none; }
+    .tbl tr:hover td { background: rgba(255,255,255,.018); }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-size: 11px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .badge.clean   { background: rgba(63,185,80,.15);  color: var(--green);  }
+    .badge.partial { background: rgba(210,153,34,.15); color: var(--yellow); }
+    .badge.failed  { background: rgba(248,81,73,.15);  color: var(--red);    }
+    .badge.compact { background: rgba(88,166,255,.12); color: var(--blue);   font-size: 10px; margin-left: 4px; }
+
+    .goal-cell { max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sid  { font-family: monospace; font-size: 11px; color: var(--muted); }
+    .num  { color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
+
+    /* ── SKILL versions ── */
+    .sv { margin-bottom: 8px; border: 1px solid var(--border); border-radius: var(--r); overflow: hidden; }
+    .sv-head {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 14px; background: var(--surface);
+      cursor: pointer; user-select: none;
+    }
+    .sv-head:hover { background: #1c2128; }
+    .sv-badge {
+      background: var(--blue); color: #fff;
+      font-size: 10px; font-weight: 700;
+      padding: 1px 6px; border-radius: 3px;
+    }
+    .sv-ts  { color: var(--muted); font-size: 11px; }
+    .sv-sum { flex: 1; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .sv-arr { color: var(--muted); margin-left: auto; font-size: 12px; }
+    .sv-body { display: none; background: #0d1117; border-top: 1px solid var(--border); }
+    .sv-body.open { display: block; }
+    .sv-body pre {
+      font-family: "JetBrains Mono", Menlo, monospace;
+      font-size: 11px; line-height: 1.7;
+      padding: 14px 16px; white-space: pre-wrap; word-break: break-word;
+    }
+
+    .empty { color: var(--muted); font-style: italic; padding: 20px 0; }
+  </style>
+</head>
+<body>
+
+{% set has_data = a and a.total > 0 %}
+
+<header>
+  <h1>SkillRunes</h1>
+  <span class="sub">Session observability</span>
+  {% if has_data %}<span class="count">{{ a.total }} sessions</span>{% endif %}
+</header>
+
+{% if not has_data %}
+<p class="empty">No sessions analysed yet — run <strong>skillrunes run</strong> first.</p>
+{% else %}
+
+<!-- ── 1. Overview cards ─────────────────────────────────────────────────── -->
+<section>
+  <h2>Overview</h2>
+  <div class="cards">
+    <div class="panel card">
+      <div class="lbl">Sessions</div>
+      <div class="val blue">{{ a.total }}</div>
+    </div>
+    <div class="panel card">
+      <div class="lbl">Clean sessions</div>
+      <div class="val {% if (a.n_clean / a.total) >= 0.7 %}green{% elif (a.n_clean / a.total) >= 0.4 %}yellow{% else %}red{% endif %}">
+        {{ ((a.n_clean / a.total) * 100) | round | int }}%
+      </div>
+      <div class="sub-val">{{ a.n_clean }} clean · {{ a.n_partial }} partial · {{ a.n_failed }} failed</div>
+    </div>
+    <div class="panel card">
+      <div class="lbl">Avg tokens / session</div>
+      <div class="val yellow">{{ "{:,}".format(a.avg_tokens) }}</div>
+      <div class="sub-val">peak {{ "{:,}".format(a.max_tokens) }}</div>
+    </div>
+    <div class="panel card">
+      <div class="lbl">Avg messages / session</div>
+      <div class="val blue">{{ a.avg_messages }}</div>
+    </div>
+    <div class="panel card">
+      <div class="lbl">Avg tok / message</div>
+      <div class="val yellow">{{ "{:,}".format(a.avg_efficiency) }}</div>
+      <div class="sub-val">efficiency proxy</div>
+    </div>
+    <div class="panel card">
+      <div class="lbl">Context compactions</div>
+      <div class="val {% if a.compaction_count > 0 %}red{% else %}green{% endif %}">{{ a.compaction_count }}</div>
+      <div class="sub-val">of {{ a.total }} sessions</div>
+    </div>
+    <div class="panel card">
+      <div class="lbl">Patterns extracted</div>
+      <div class="val purple">{{ a.total_patterns }}</div>
+      <div class="sub-val">across all sessions</div>
+    </div>
+  </div>
+</section>
+
+<!-- ── 2. Quality + Failures ─────────────────────────────────────────────── -->
+<section>
+  <h2>Session quality &amp; failure patterns</h2>
+  <div class="chart-grid-2">
+
+    <div class="panel chart-panel">
+      <h3>Outcome distribution</h3>
+      <div class="chart-sub">Clean · Partial · Failed</div>
+      <div class="donut-row">
+        <canvas id="donutChart"></canvas>
+        <div class="legend">
+          <div class="leg-item">
+            <div class="leg-dot" style="background:var(--green)"></div>
+            <span>Clean</span>
+            <span class="leg-n">{{ a.n_clean }}</span>
+            <span class="leg-pct">{{ ((a.n_clean / a.total) * 100) | round | int }}%</span>
+          </div>
+          <div class="leg-item">
+            <div class="leg-dot" style="background:var(--yellow)"></div>
+            <span>Partial</span>
+            <span class="leg-n">{{ a.n_partial }}</span>
+            <span class="leg-pct">{{ ((a.n_partial / a.total) * 100) | round | int }}%</span>
+          </div>
+          <div class="leg-item">
+            <div class="leg-dot" style="background:var(--red)"></div>
+            <span>Failed</span>
+            <span class="leg-n">{{ a.n_failed }}</span>
+            <span class="leg-pct">{{ ((a.n_failed / a.total) * 100) | round | int }}%</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel chart-panel">
+      <h3>Top failure patterns</h3>
+      <div class="chart-sub">Most repeated failure strings across sessions</div>
+      {% if metrics and metrics.top_failure_patterns %}
+      <div class="fail-list">
+        {% for fp in metrics.top_failure_patterns %}
+        <div class="fail-item">
+          <span class="fail-num">{{ loop.index }}</span>
+          <span>{{ fp.pattern }}</span>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="empty">No repeated failures.</p>
+      {% endif %}
+    </div>
+
+  </div>
+</section>
+
+<!-- ── 3. Token charts ────────────────────────────────────────────────────── -->
+<section>
+  <h2>Token usage</h2>
+  <div class="chart-grid-2">
+
+    <div class="panel chart-panel tall">
+      <h3>Tokens per session</h3>
+      <div class="chart-sub">Log₁₀ scale — handles large outliers without distortion</div>
+      <canvas id="tokenBar"></canvas>
+    </div>
+
+    <div class="panel chart-panel tall">
+      <h3>Token efficiency (tokens / message)</h3>
+      <div class="chart-sub">Lower = more focused exchanges per turn</div>
+      <canvas id="efficiencyBar"></canvas>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── 4. Complexity & patterns ──────────────────────────────────────────── -->
+<section>
+  <h2>Session complexity &amp; learning</h2>
+  <div class="chart-grid-3">
+
+    <div class="panel chart-panel">
+      <h3>Messages per session</h3>
+      <div class="chart-sub">Back-and-forth turn count</div>
+      <canvas id="msgBar"></canvas>
+    </div>
+
+    <div class="panel chart-panel">
+      <h3>Patterns extracted per session</h3>
+      <div class="chart-sub">Learnable insights identified by SkillRunes</div>
+      <canvas id="patternsBar"></canvas>
+    </div>
+
+    <div class="panel chart-panel">
+      <h3>Cumulative pattern growth</h3>
+      <div class="chart-sub">Knowledge base growing over sessions</div>
+      <canvas id="cumulativeLine"></canvas>
+    </div>
+
+  </div>
+</section>
+
+<!-- ── 5. Worked vs Failed per session ───────────────────────────────────── -->
+<section>
+  <h2>Worked vs failed observations per session</h2>
+  <div class="panel chart-panel tall">
+    <h3>Observations breakdown</h3>
+    <div class="chart-sub">Green = things that worked · Red = things that failed · Stacked per session</div>
+    <canvas id="stackedBar"></canvas>
+  </div>
+</section>
+
+<!-- ── 6. Session table ───────────────────────────────────────────────────── -->
+<section>
+  <h2>All sessions</h2>
+  <div class="panel" style="overflow:hidden">
+    <table class="tbl">
+      <thead>
+        <tr>
+          <th>Status</th>
+          <th>Goal</th>
+          <th>ID</th>
+          <th>Tokens</th>
+          <th>Tok/msg</th>
+          <th>Msgs</th>
+          <th>Duration</th>
+          <th>Patterns</th>
+        </tr>
+      </thead>
+      <tbody>
+      {% for s in sessions %}
+      {% if s.what_worked and not s.what_failed %}{% set st = "clean" %}
+      {% elif s.what_worked and s.what_failed %}{% set st = "partial" %}
+      {% else %}{% set st = "failed" %}{% endif %}
+      {% set eff = (s.token_count / s.message_count) | round | int if s.message_count else 0 %}
+      <tr>
+        <td>
+          <span class="badge {{ st }}">{{ st | capitalize }}</span>
+          {% if s.compaction_occurred %}<span class="badge compact">compacted</span>{% endif %}
+        </td>
+        <td><div class="goal-cell" title="{{ s.goal | escape_html }}">{{ s.goal }}</div></td>
+        <td><span class="sid">{{ s.session_id[:8] }}</span></td>
+        <td class="num">{{ "{:,}".format(s.token_count) }}</td>
+        <td class="num">{{ "{:,}".format(eff) }}</td>
+        <td class="num">{{ s.message_count }}</td>
+        <td class="num">
+          {% set d = s.duration_seconds %}
+          {% if d >= 3600 %}{{ "%.1f"|format(d/3600) }}h
+          {% elif d >= 60 %}{{ (d/60)|round|int }}m
+          {% else %}{{ d|round|int }}s{% endif %}
+        </td>
+        <td class="num">{{ s.patterns | length }}</td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ── 7. SKILL.md history ───────────────────────────────────────────────── -->
+<section>
+  <h2>SKILL.md version history</h2>
+  {% if skills %}
+  {% for sv in skills | reverse %}
+  <div class="sv">
+    <div class="sv-head" onclick="toggleSv(this)">
+      <span class="sv-badge">v{{ sv.version }}</span>
+      <span class="sv-ts">{{ sv.timestamp.strftime("%Y-%m-%d %H:%M") if sv.timestamp else "" }}</span>
+      <span class="sv-sum">{{ sv.change_summary[:120] if sv.change_summary else "No summary" }}</span>
+      <span class="sv-arr">▶</span>
+    </div>
+    <div class="sv-body">
+      <pre>{{ sv.content | escape_html }}</pre>
+    </div>
+  </div>
+  {% endfor %}
+  {% else %}
+  <p class="empty">No skill versions yet.</p>
+  {% endif %}
+</section>
+
+{% endif %}{# has_data #}
+
+<!-- ── Chart.js ──────────────────────────────────────────────────────────── -->
+<script>
+{% if has_data %}
+
+const LABELS    = {{ a.labels | tojson }};
+const COLORS    = {{ a.colors | tojson }};
+const TOKENS    = {{ a.tokens | tojson }};
+const LOG_TOK   = {{ a.log_tokens | tojson }};
+const DURATIONS = {{ a.durations | tojson }};
+const MESSAGES  = {{ a.messages | tojson }};
+const PATTERNS  = {{ a.patterns_cnt | tojson }};
+const WORKED    = {{ a.worked_cnt | tojson }};
+const FAILED    = {{ a.failed_cnt | tojson }};
+const EFFIC     = {{ a.efficiency | tojson }};
+const CUMUL     = {{ a.cumulative_patterns | tojson }};
+
+const AXIS = {
+  x: { ticks: { color: "#7d8590", font: { size: 10 } }, grid: { color: "#21262d" } },
+  y: { ticks: { color: "#7d8590", font: { size: 10 } }, grid: { color: "#21262d" } },
+};
+
+const BASE_OPTS = {
+  responsive: true,
+  maintainAspectRatio: true,
+  plugins: { legend: { display: false } },
+  scales: AXIS,
+};
+
+// ── Donut ──
+new Chart(document.getElementById("donutChart"), {
+  type: "doughnut",
+  data: {
+    labels: ["Clean", "Partial", "Failed"],
+    datasets: [{
+      data: [{{ a.n_clean }}, {{ a.n_partial }}, {{ a.n_failed }}],
+      backgroundColor: ["#3fb950", "#d29922", "#f85149"],
+      borderWidth: 0,
+      hoverOffset: 4,
+    }],
+  },
+  options: {
+    responsive: true,
+    cutout: "68%",
+    plugins: {
+      legend: { display: false },
+      tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${ctx.parsed}` } },
+    },
+  },
+});
+
+// ── Token bar (log scale) ──
+new Chart(document.getElementById("tokenBar"), {
+  type: "bar",
+  data: {
+    labels: LABELS,
+    datasets: [{
+      data: LOG_TOK,
+      backgroundColor: COLORS,
+      borderRadius: 3,
+    }],
+  },
+  options: {
+    ...BASE_OPTS,
+    plugins: {
+      ...BASE_OPTS.plugins,
+      tooltip: {
+        callbacks: {
+          label: (ctx) => {
+            const raw = TOKENS[ctx.dataIndex];
+            return ` ${raw.toLocaleString()} tokens`;
+          }
+        }
+      }
+    },
+    scales: {
+      ...AXIS,
+      y: {
+        ...AXIS.y,
+        title: { display: true, text: "log₁₀(tokens)", color: "#7d8590", font: { size: 10 } },
+      },
+    },
+  },
+});
+
+// ── Efficiency bar ──
+new Chart(document.getElementById("efficiencyBar"), {
+  type: "bar",
+  data: {
+    labels: LABELS,
+    datasets: [{
+      data: EFFIC,
+      backgroundColor: COLORS,
+      borderRadius: 3,
+    }],
+  },
+  options: {
+    ...BASE_OPTS,
+    scales: {
+      ...AXIS,
+      y: { ...AXIS.y, title: { display: true, text: "tokens / message", color: "#7d8590", font: { size: 10 } } },
+    },
+  },
+});
+
+// ── Messages bar ──
+new Chart(document.getElementById("msgBar"), {
+  type: "bar",
+  data: {
+    labels: LABELS,
+    datasets: [{ data: MESSAGES, backgroundColor: "#58a6ff", borderRadius: 3 }],
+  },
+  options: BASE_OPTS,
+});
+
+// ── Patterns per session bar ──
+new Chart(document.getElementById("patternsBar"), {
+  type: "bar",
+  data: {
+    labels: LABELS,
+    datasets: [{ data: PATTERNS, backgroundColor: "#bc8cff", borderRadius: 3 }],
+  },
+  options: BASE_OPTS,
+});
+
+// ── Cumulative patterns line ──
+new Chart(document.getElementById("cumulativeLine"), {
+  type: "line",
+  data: {
+    labels: LABELS,
+    datasets: [{
+      data: CUMUL,
+      borderColor: "#bc8cff",
+      backgroundColor: "rgba(188,140,255,.1)",
+      fill: true,
+      tension: 0.35,
+      pointRadius: 3,
+      pointBackgroundColor: "#bc8cff",
+    }],
+  },
+  options: {
+    ...BASE_OPTS,
+    scales: {
+      ...AXIS,
+      y: { ...AXIS.y, beginAtZero: true },
+    },
+  },
+});
+
+// ── Stacked worked/failed bar ──
+new Chart(document.getElementById("stackedBar"), {
+  type: "bar",
+  data: {
+    labels: LABELS,
+    datasets: [
+      {
+        label: "Worked",
+        data: WORKED,
+        backgroundColor: "rgba(63,185,80,.75)",
+        borderRadius: 3,
+        stack: "s",
+      },
+      {
+        label: "Failed",
+        data: FAILED,
+        backgroundColor: "rgba(248,81,73,.75)",
+        borderRadius: 3,
+        stack: "s",
+      },
+    ],
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: {
+      legend: {
+        display: true,
+        labels: { color: "#7d8590", font: { size: 11 }, boxWidth: 12 },
+      },
+    },
+    scales: {
+      x: { ...AXIS.x, stacked: true },
+      y: { ...AXIS.y, stacked: true, beginAtZero: true,
+           title: { display: true, text: "observations", color: "#7d8590", font: { size: 10 } } },
+    },
+  },
+});
+
+{% endif %}
+
+function toggleSv(head) {
+  const body = head.nextElementSibling;
+  const arr  = head.querySelector(".sv-arr");
+  const open = body.classList.toggle("open");
+  arr.textContent = open ? "▼" : "▶";
+}
+</script>
+
+</body>
+</html>

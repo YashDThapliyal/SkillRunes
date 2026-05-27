@@ -1,0 +1,46 @@
+# SkillRunes state directory
+.skillrunes/
+.agentlens/
+
+# Generated project-local skill file
+SKILL.md
+
+# Environment variables
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+.eggs/
+dist/
+build/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Type checker / linter caches
+.mypy_cache/
+.ruff_cache/
+.pyright/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
