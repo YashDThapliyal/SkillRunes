@@ -186,6 +186,7 @@ def test_run_with_delta_synthesis_saves_rulebook(tmp_path: Path, monkeypatch: py
             return "nowhere"
 
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "require_subscription_auth", lambda: None)
     monkeypatch.setattr(cli, "get_provider", lambda name=None: _Provider())
     monkeypatch.setattr(cli, "analyze_session", lambda *a, **k: _summary())
     monkeypatch.setattr(
@@ -250,3 +251,37 @@ def test_learn_skill_from_train_transcripts(tmp_path: Path, monkeypatch: pytest.
 def test_learn_skill_requires_train_results() -> None:
     with pytest.raises(ValueError, match="No train-split"):
         learn.learn_skill([])
+
+
+@pytest.mark.unit
+def test_vote_pruning_counts_against_removal_cap() -> None:
+    deltas = [RuleDelta(op="harmful", rule_id=f"R{i}") for i in range(1, 9) for _ in range(2)]
+
+    new, report = apply_deltas(_book(8), deltas)
+
+    assert len(report.pruned) == 2  # 25% of 8
+    assert len(new.rules) == 6
+    assert sum("prune" in r for r in report.rejected) == 6
+
+
+@pytest.mark.unit
+def test_small_rulebooks_can_still_remove_one_rule() -> None:
+    new, report = apply_deltas(_book(2), [RuleDelta(op="remove", rule_id="R1")])
+
+    assert report.removed == ["R1"] and len(new.rules) == 1
+
+
+@pytest.mark.integration
+def test_run_subscription_billing_verifies_login(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from skillrunes.billing import BillingError
+
+    def deny() -> None:
+        raise BillingError("auth method: api_key")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "require_subscription_auth", deny)
+
+    result = CliRunner().invoke(cli.app, ["run", "--billing", "subscription"])
+
+    assert result.exit_code == 1
+    assert "Billing guard" in result.output

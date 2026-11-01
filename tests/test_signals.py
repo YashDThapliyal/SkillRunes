@@ -175,3 +175,23 @@ def test_redaction_covers_tool_result_content() -> None:
     assert "sk-abcdefghijklmnopqrstuvwxyz" not in safe[0].tool_results[0].content
     assert safe[0].tool_results[0].is_error is True
     assert "tool_result.content" in report.redacted_fields
+
+
+@pytest.mark.unit
+def test_fail_edit_rerun_is_not_a_retry() -> None:
+    messages = [
+        _assistant(("a", "Bash", {"command": "pytest -x"})),
+        _result("a", True),
+        _assistant(("b", "Edit", {"file_path": "calc.py"})),
+        _result("b", False),
+        _assistant(("c", "Bash", {"command": "pytest -x"})),
+        _result("c", False),
+    ]
+
+    assert compute_signals(messages).retry_loops == 0
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("text", ["no problem, continue", "no worries", "No need to rush", "no, go ahead"])
+def test_benign_no_is_not_a_correction(text: str) -> None:
+    assert is_correction(text) is False

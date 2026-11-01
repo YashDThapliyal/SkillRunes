@@ -23,9 +23,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import urllib.error
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from skillrunes import __version__
@@ -132,8 +133,10 @@ def _tool_spans(
     order: list[str] = []
     for msg in messages:
         for call in msg.tool_calls:
-            calls[call.id] = (call.name, msg.timestamp or fallback)
-            order.append(call.id)
+            # Missing or repeated ids would collide; give each call a unique key.
+            key = call.id if call.id and call.id not in calls else f"{call.id}#{len(order)}"
+            calls[key] = (call.name, msg.timestamp or fallback)
+            order.append(key)
     finished: dict[str, tuple[bool, datetime | None]] = {}
     for msg in messages:
         for result in msg.tool_results:
@@ -142,7 +145,7 @@ def _tool_spans(
     spans: list[dict[str, Any]] = []
     for call_id in order:
         name, started = calls[call_id]
-        is_error, ended = finished.get(call_id, (False, None))
+        is_error, ended = finished.get(call_id.split("#", 1)[0], (False, None))
         end = ended if ended and ended >= started else started
         spans.append(
             _span(
@@ -155,7 +158,7 @@ def _tool_spans(
                 {
                     "gen_ai.operation.name": "execute_tool",
                     "gen_ai.tool.name": name,
-                    "gen_ai.tool.call.id": call_id,
+                    "gen_ai.tool.call.id": call_id.split("#", 1)[0],
                 },
                 STATUS_ERROR if is_error else STATUS_OK,
             )
@@ -206,12 +209,14 @@ def _any_value(value: Any) -> dict[str, Any]:
     if isinstance(value, int):
         return {"intValue": str(value)}
     if isinstance(value, float):
-        return {"doubleValue": value}
+        return {"doubleValue": value} if math.isfinite(value) else {"stringValue": str(value)}
     return {"stringValue": str(value)}
 
 
 def _nanos(moment: datetime) -> int:
-    return int(moment.timestamp() * 1_000_000_000)
+    """Unix nanoseconds; naive datetimes are treated as UTC, never local time."""
+    aware = moment if moment.tzinfo is not None else moment.replace(tzinfo=timezone.utc)
+    return int(aware.timestamp() * 1_000_000_000)
 
 
 def _hex_id(seed: str, length: int) -> str:

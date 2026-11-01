@@ -292,3 +292,44 @@ def test_gate_rejects_wide_interval() -> None:
 
     promote, reason = gate_decision(report, "learned")
     assert not promote and "non-inferiority" in reason
+
+
+@pytest.mark.integration
+def test_keep_workspaces_and_timeouts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def slow(cmd, **kwargs):  # noqa: ANN001, ANN202
+        raise subprocess.TimeoutExpired(cmd, 1, output=b"")
+
+    monkeypatch.setattr(runner.subprocess, "run", slow)
+    stats, _ = runner.run_agent(tmp_path, "p", "sonnet", 1)
+    assert stats.is_error and "timed out after 1s" in stats.error
+
+    kept: list[Path] = []
+
+    def fake_execute(suite, task, arm, seed, config, scratch):  # noqa: ANN001, ANN202
+        kept.append(scratch)
+        return _result(task.id, arm.name, seed, passed=True)
+
+    monkeypatch.setattr(runner, "execute_run", fake_execute)
+    suite = load_suite(SUITE)
+    tasks = select_tasks(suite, "test", ["csv"])
+    runner.run_matrix(suite, tasks, [BenchArm(name="none")], 1, runner.RunConfig("sonnet", tmp_path / "a", keep_workspaces=True), 1)
+    runner.run_matrix(suite, tasks, [BenchArm(name="none")], 1, runner.RunConfig("sonnet", tmp_path / "b"), 1)
+    assert kept[0].exists() and not kept[1].exists()
+
+
+@pytest.mark.integration
+def test_checker_runs_without_api_key(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+
+    def fake(cmd, **kwargs):  # noqa: ANN001, ANN202
+        seen.update(kwargs)
+        return subprocess.CompletedProcess(cmd, 0, '{"criteria": {"functional": true}}', "")
+
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-test")
+    monkeypatch.setattr(runner.subprocess, "run", fake)
+    suite = load_suite(SUITE)
+
+    passed, criteria, _ = runner.run_check(suite, suite.tasks[0], tmp_path)
+
+    assert passed and criteria == {"functional": True}
+    assert "ANTHROPIC_API_KEY" not in seen["env"]

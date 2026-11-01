@@ -43,9 +43,12 @@ console = Console(stderr=True)
 _SESSION_ID_RE = re.compile(
     r"([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$"
 )
-_NONZERO_EXIT_RE = re.compile(
-    r"(\"exit_code\\*\"\s*:\s*-?[1-9]\d*|Exit code:?\s*-?[1-9]\d*|Process exited with code -?[1-9])"
-)
+# Structured exit_code fields (Codex tool metadata, possibly JSON-escaped)
+# are trusted anywhere in the output; free-text exit markers only in the
+# output header, so a `cat` of a log that mentions "Exit code: 1" is not an error.
+_EXIT_CODE_FIELD_RE = re.compile(r"\"exit_code\\*\"\s*:\s*-?[1-9]\d*")
+_EXIT_TEXT_RE = re.compile(r"(Exit code:?\s*-?[1-9]\d*|Process exited with code -?[1-9])")
+_HEADER_CHARS = 200
 _FAILURE_MARKERS = ("Script failed", '"status":"rejected"', "\\\"status\\\":\\\"rejected\\\"")
 
 # Harness-injected context that Codex sends as role=user; not human-authored.
@@ -320,7 +323,9 @@ def _stringify(value: Any) -> str:
 def _is_failed_output(output: str) -> bool:
     if any(marker in output for marker in _FAILURE_MARKERS):
         return True
-    return bool(_NONZERO_EXIT_RE.search(output))
+    if _EXIT_CODE_FIELD_RE.search(output):
+        return True
+    return bool(_EXIT_TEXT_RE.search(output[:_HEADER_CHARS]))
 
 
 def _usage_from_info(info: Any) -> Usage | None:

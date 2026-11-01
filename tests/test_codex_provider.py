@@ -99,6 +99,8 @@ def test_signals_work_on_codex_sessions(provider: CodexProvider, fixture_path: P
         ("Exit code: 1\nboom", True),
         ("Script failed\nTypeError", True),
         ("Success. Updated files", False),
+        ("Script completed\n" + "x" * 300 + "\nlog line: Exit code: 1", False),
+        ("Script completed\n" + "x" * 300 + '\n{"exit_code":3}', True),
     ],
 )
 def test_failed_output_detection(output: str, failed: bool) -> None:

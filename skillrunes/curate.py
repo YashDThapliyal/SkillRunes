@@ -5,7 +5,8 @@ Full-document rewrites of an instruction file can silently drop most of it
 SkillRunes' delta mode instead asks the model for small edit operations and
 applies them here, in plain code, with guards:
 
-  * removals per round are capped (max_removal_fraction of current rules)
+  * removals per round (explicit removes AND vote-based pruning combined) are
+    capped at max_removal_fraction of current rules (at least one)
   * an "add" that near-duplicates an existing rule becomes a helpful vote
   * rules whose harmful votes exceed helpful votes by prune_margin are pruned
   * malformed or unknown-id operations are rejected and reported, never guessed
@@ -41,7 +42,7 @@ def apply_deltas(
     rules: OrderedDict[str, SkillRule] = OrderedDict((r.id, r) for r in book.rules)
     next_id = book.next_id
     report = CurationReport()
-    removal_budget = int(len(book.rules) * max_removal_fraction)
+    removal_budget = max(1, int(len(book.rules) * max_removal_fraction)) if book.rules else 0
 
     for delta in deltas:
         if delta.op not in VALID_OPS:
@@ -66,9 +67,13 @@ def apply_deltas(
             rules[rule.id] = _vote(rule, delta.op, delta.session_ids)
 
     for rule in list(rules.values()):
-        if rule.harmful - rule.helpful >= prune_margin:
-            del rules[rule.id]
-            report.pruned.append(rule.id)
+        if rule.harmful - rule.helpful < prune_margin:
+            continue
+        if len(report.removed) + len(report.pruned) >= removal_budget:
+            report.rejected.append(f"prune {rule.id}: removal cap reached")
+            continue
+        del rules[rule.id]
+        report.pruned.append(rule.id)
 
     return RuleBook(version=version, next_id=next_id, rules=tuple(rules.values())), report
 

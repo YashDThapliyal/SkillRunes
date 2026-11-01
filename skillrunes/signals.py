@@ -8,7 +8,9 @@ judged by what the agent actually did rather than by what a model says it did.
 Definitions:
   tool_errors       tool results flagged ``is_error`` by the agent runtime
   retry_loops       an identical tool call (same name and arguments) issued
-                    again after that exact call already failed
+                    again immediately after that exact call failed, with no
+                    other tool call in between (fail → edit → rerun is normal
+                    iteration, not a retry)
   interruptions     the user stopped the agent mid-turn
   user_corrections  a user turn that pushes back on the agent ("no, ...",
                     "that's wrong", "revert that", ...)
@@ -41,7 +43,8 @@ _INTERRUPT_MARKERS = (
 )
 
 _CORRECTION_START = re.compile(
-    r"^\s*(no+|nope|wrong|stop|undo|revert|that'?s not|that is not|"
+    r"^\s*(no+(?![,\s]+(problem|worries|need|rush|go ahead|thanks|that'?s fine|it'?s fine))|"
+    r"nope|wrong|stop|undo|revert|that'?s not|that is not|"
     r"not what|why did you|you (didn'?t|forgot|broke|missed))\b",
     re.IGNORECASE,
 )
@@ -107,14 +110,14 @@ def _count_retries(
     call_keys: dict[str, str],
     errored_ids: set[str],
 ) -> int:
-    failed_keys: set[str] = set()
     retries = 0
+    previous_key = ""
+    previous_failed = False
     for call_id in ordered_call_ids:
         key = call_keys[call_id]
-        if key in failed_keys:
+        if previous_failed and key == previous_key:
             retries += 1
-        if call_id in errored_ids:
-            failed_keys.add(key)
+        previous_key, previous_failed = key, call_id in errored_ids
     return retries
 
 

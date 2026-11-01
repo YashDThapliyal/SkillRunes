@@ -22,13 +22,14 @@ def test_subscription_env_strips_api_and_nesting_vars() -> None:
         "CLAUDECODE": "1",
         "CLAUDE_CODE_ENTRYPOINT": "cli",
         "CLAUDE_CODE_USE_BEDROCK": "1",
+        "CLAUDE_CODE_OAUTH_TOKEN": "oauth",
         "PATH": "/usr/bin",
         "HOME": "/home/me",
     }
 
     env = subscription_env(base)
 
-    assert env == {"PATH": "/usr/bin", "HOME": "/home/me"}
+    assert env == {"PATH": "/usr/bin", "HOME": "/home/me", "CLAUDE_CODE_OAUTH_TOKEN": "oauth"}
     assert "ANTHROPIC_API_KEY" in base  # input is not mutated
 
 

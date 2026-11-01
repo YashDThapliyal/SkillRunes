@@ -168,3 +168,20 @@ def test_cli_export_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, 
 
     assert result.exit_code == 1
     assert message in result.output
+
+
+@pytest.mark.unit
+def test_naive_times_duplicate_ids_and_nan_are_safe() -> None:
+    naive = datetime(2026, 11, 1, 12, 0, 0)
+    messages = [
+        RawMessage(type="assistant", role="assistant", timestamp=naive, tool_calls=[
+            ToolCall(id="dup", name="a"), ToolCall(id="dup", name="b"), ToolCall(id="", name="c"),
+        ]),
+    ]
+    summary = _summary().model_copy(update={"duration_seconds": float("nan")})
+
+    spans = session_spans(summary, messages)
+
+    assert spans[0]["startTimeUnixNano"] == str(int(T0.timestamp() * 1e9))
+    assert len({s["spanId"] for s in spans}) == 4
+    json.dumps(build_otlp_request([(summary, messages)]), allow_nan=False)

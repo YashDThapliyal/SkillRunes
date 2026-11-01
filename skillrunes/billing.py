@@ -51,6 +51,10 @@ def resolve_billing_mode(mode: str | None = None) -> str:
     return selected
 
 
+# Subscription credentials that must survive the nesting-prefix scrub.
+_SUBSCRIPTION_VARS = ("CLAUDE_CODE_OAUTH_TOKEN",)
+
+
 def subscription_env(base: dict[str, str] | None = None) -> dict[str, str]:
     """Return a copy of ``base`` (default: os.environ) safe for subscription CLI calls.
 
@@ -62,7 +66,10 @@ def subscription_env(base: dict[str, str] | None = None) -> dict[str, str]:
         key: value
         for key, value in source.items()
         if key not in _API_BILLING_VARS
-        and not any(key.startswith(prefix) for prefix in _NESTING_PREFIXES)
+        and (
+            key in _SUBSCRIPTION_VARS
+            or not any(key.startswith(prefix) for prefix in _NESTING_PREFIXES)
+        )
     }
 
 

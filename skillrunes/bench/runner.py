@@ -113,13 +113,16 @@ def run_agent(
             stdin=subprocess.DEVNULL,
         )
         stdout, stderr, code = proc.stdout, proc.stderr, proc.returncode
+        timed_out = False
     except subprocess.TimeoutExpired as exc:
-        stdout = _decode(exc.stdout)
-        stderr, code = f"agent timed out after {timeout}s", -1
+        stdout, stderr, code, timed_out = _decode(exc.stdout), "", -1, True
     lines = parse_stream(stdout)
     stats = stats_from_stream(lines)
-    if code != 0 and not stats.error:
-        stats = stats.model_copy(update={"is_error": True, "error": stderr.strip()[-500:]})
+    if timed_out:
+        stats = stats.model_copy(update={"is_error": True, "error": f"agent timed out after {timeout}s"})
+    elif code != 0:
+        detail = stderr.strip()[-500:] or stats.error or f"exit code {code}"
+        stats = stats.model_copy(update={"is_error": True, "error": detail})
     return stats, lines
 
 
@@ -188,6 +191,7 @@ def run_check(suite: BenchSuite, task: BenchTask, workspace: Path) -> tuple[bool
             capture_output=True,
             text=True,
             timeout=_CHECK_TIMEOUT,
+            env=agent_env(),
         )
     except subprocess.TimeoutExpired:
         return False, {}, "checker timed out"
@@ -317,23 +321,32 @@ def run_matrix(
     lock = threading.Lock()
     new_results: list[BenchRunResult] = []
 
-    with tempfile.TemporaryDirectory(prefix="skillrunes-bench-") as scratch:
-        with ThreadPoolExecutor(max_workers=max(1, workers)) as pool:
-            futures = {
-                pool.submit(execute_run, suite, task, arm, seed, config, Path(scratch)): (task, arm, seed)
-                for task, arm, seed in planned
-            }
-            for future in as_completed(futures):
-                task, arm, seed = futures[future]
-                try:
-                    result = future.result()
-                except Exception as exc:  # noqa: BLE001 - surfaced to caller
-                    if on_error is not None:
-                        on_error(f"{task.id}|{arm.name}|{seed}", exc)
-                    continue
-                with lock:
-                    store.append_bench_result(config.out_dir, result)
-                    new_results.append(result)
-                if on_result is not None:
-                    on_result(result)
+    scratch = Path(tempfile.mkdtemp(prefix="skillrunes-bench-"))
+    pool = ThreadPoolExecutor(max_workers=max(1, workers))
+    try:
+        futures = {
+            pool.submit(execute_run, suite, task, arm, seed, config, scratch): (task, arm, seed)
+            for task, arm, seed in planned
+        }
+        for future in as_completed(futures):
+            task, arm, seed = futures[future]
+            try:
+                result = future.result()
+            except Exception as exc:  # noqa: BLE001 - surfaced to caller
+                if on_error is not None:
+                    on_error(f"{task.id}|{arm.name}|{seed}", exc)
+                continue
+            with lock:
+                store.append_bench_result(config.out_dir, result)
+                new_results.append(result)
+            if on_result is not None:
+                on_result(result)
+    except KeyboardInterrupt:
+        # Don't start (and bill) queued runs; in-flight runs finish or time out.
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
+        if not config.keep_workspaces:
+            shutil.rmtree(scratch, ignore_errors=True)
     return new_results

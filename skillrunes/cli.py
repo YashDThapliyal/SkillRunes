@@ -22,7 +22,7 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 import skillrunes.store as store
-from skillrunes.billing import resolve_billing_mode
+from skillrunes.billing import BillingError, require_subscription_auth, resolve_billing_mode
 from skillrunes.compress import (
     build_ranked_memory_seed,
     compress_skill_content,
@@ -191,6 +191,12 @@ def run(
     else:
         console.print(f"[dim]Redaction:[/dim] [bold]{redaction_level}[/bold]")
     console.print(f"[dim]Billing:[/dim] [bold]{billing}[/bold]")
+    if billing == "subscription" and not dry_run:
+        try:
+            require_subscription_auth()
+        except BillingError as exc:
+            err_console.print(f"[red]Billing guard:[/red] {exc}")
+            raise typer.Exit(1) from exc
     if budget_tokens:
         console.print(
             f"[dim]Skill budget:[/dim] [bold]{budget_tokens:,}[/bold] tokens "
