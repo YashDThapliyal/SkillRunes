@@ -30,6 +30,7 @@ from skillrunes.compress import (
     validate_compression_mode,
 )
 from skillrunes.cli_measure import register as register_measurement_commands
+from skillrunes.cli_traces import register as register_trace_commands
 from skillrunes.config import (
     BILLING_ENV_VAR,
     DEFAULT_PROVIDER,
@@ -54,7 +55,6 @@ from skillrunes.redact import (
     validate_redaction_level,
 )
 from skillrunes.synthesize import generate_skill_file, propose_rule_deltas
-from skillrunes.traces import build_trace_exports
 from skillrunes.utils import compute_metrics, now_utc, render_skill_diff
 
 load_dotenv()
@@ -73,6 +73,7 @@ app.add_typer(doctor_app, name="doctor")
 
 
 register_measurement_commands(app)
+register_trace_commands(app)
 
 
 # ---------------------------------------------------------------------------
@@ -582,38 +583,6 @@ def eval_memory(
     path = store.save_eval_result(result)
     _print_eval_result(result)
     console.print(f"[green]✓[/green] Eval artifact written to {path}")
-
-
-# ---------------------------------------------------------------------------
-# export-traces
-# ---------------------------------------------------------------------------
-
-@app.command("export-traces")
-def export_traces(
-    trace_format: str = typer.Option("otel-json", "--format", help="Trace format: otel-json."),
-    provider: str = typer.Option("unknown", "--provider", help="Provider label for exported traces."),
-    redaction_level: str = typer.Option(
-        "basic",
-        "--redact-level",
-        help="Export-time redaction level: basic or strict.",
-    ),
-) -> None:
-    """Export analysed sessions as redacted OTel-style JSON."""
-    if trace_format != "otel-json":
-        err_console.print("[red]Error:[/red] Only --format otel-json is supported.")
-        raise typer.Exit(1)
-    try:
-        redaction_level = validate_redaction_level(redaction_level)
-    except ValueError as exc:
-        err_console.print(f"[red]Error:[/red] {exc}")
-        raise typer.Exit(1) from exc
-    if redaction_level == "off":
-        err_console.print("[red]Error:[/red] trace export requires basic or strict redaction.")
-        raise typer.Exit(1)
-    store.init_store()
-    exports = build_trace_exports(store.load_all_summaries(), provider, redaction_level=redaction_level)
-    path = store.save_trace_exports(exports)
-    console.print(f"[green]✓[/green] Exported {len(exports)} trace(s) to {path}")
 
 
 # ---------------------------------------------------------------------------

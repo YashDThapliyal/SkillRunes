@@ -408,6 +408,16 @@ def save_trace_exports(exports: list[TraceExport]) -> Path:
     return path
 
 
+def save_otlp_export(request: dict) -> Path:
+    """Persist an OTLP/JSON ExportTraceServiceRequest."""
+    import json
+
+    stamp = now_utc().strftime("%Y%m%d%H%M%S")
+    path = _traces_dir() / f"otlp-traces-{stamp}.json"
+    _atomic_write(path, json.dumps(request, indent=2))
+    return path
+
+
 def privacy_scan_paths() -> list[Path]:
     """Return local files doctor privacy should scan."""
     root = Path.cwd()
