@@ -16,6 +16,18 @@ SkillRunes is provider-based. The first working provider is **Claude Code**.
 Codex support is planned and exposed as an experimental provider path, but
 transcript ingestion is not implemented yet.
 
+## What's New in 0.2.0
+
+SkillRunes 0.2.0 focuses on safer, more portable agent memory:
+
+- Privacy/redaction modes: `basic`, `strict`, and explicit `off`
+- `skillrunes doctor privacy` for local secret scanning
+- Token-budgeted skill compression and `skillrunes prune`
+- Claude Skills export to `.claude/skills/skillrunes-project-memory/`
+- `AGENTS.md` export for agent-compatible project instructions
+- Deterministic local evals for skill-version quality checks
+- Redacted OTel-style trace export for analysed sessions
+
 ## How It Works
 
 1. SkillRunes scans transcript files for the current project.
@@ -41,11 +53,33 @@ skillrunes init
 # Analyse new sessions and update SKILL.md
 skillrunes run
 
+# Redact transcript secrets before archive/model analysis (default: basic)
+skillrunes run --redact-level basic
+
 # Choose a transcript provider explicitly
 skillrunes run --provider claude_code
 
+# Generate token-budgeted project memory
+skillrunes run --budget-tokens 1200 --compression-mode balanced
+
 # Preview changes without writing files
 skillrunes run --dry-run
+
+# Recompress the current skill memory without ingesting new sessions
+skillrunes prune --budget-tokens 1200 --dry-run
+
+# Export memory to agent-native instruction formats
+skillrunes export --target claude
+skillrunes export --target agents
+
+# Scan local SkillRunes artifacts for likely secrets
+skillrunes doctor privacy
+
+# Run deterministic before/after memory-quality checks
+skillrunes eval --latest
+
+# Export analysed sessions as redacted OTel-style JSON
+skillrunes export-traces --format otel-json
 
 # Launch the local observability dashboard
 skillrunes visualize
@@ -89,12 +123,68 @@ Supported provider names today:
 The Claude Code provider reads JSONL transcripts from `~/.claude/projects/` and
 matches sessions to the current working directory.
 
+## Privacy
+
+SkillRunes defaults to `--redact-level basic`, which redacts common secrets
+before raw transcript archiving and model extraction. Basic redaction covers API
+keys, bearer tokens, GitHub tokens, `.env`-style secret assignments, private key
+blocks, authorization headers, and URLs with embedded credentials.
+
+Use `--redact-level strict` to additionally redact emails, home-directory
+paths, external absolute paths, IP addresses, and URL query strings. Use
+`--redact-level off` only when you explicitly want unredacted local archives and
+model input; the CLI prints a warning before continuing.
+
+Run `skillrunes doctor privacy --level basic` to scan local SkillRunes artifacts
+for likely secrets without modifying files. Use `--level strict` to also flag
+emails, paths, IP addresses, and URL query strings.
+
+## Token Budgets and Exports
+
+SkillRunes can compress generated memory to an approximate token budget:
+
+```bash
+skillrunes run --budget-tokens 1200 --compression-mode balanced
+skillrunes prune --budget-tokens 1200 --dry-run
+```
+
+Supported compression modes are `concise`, `balanced`, and `detailed`.
+
+Exports keep root `SKILL.md` intact while also writing agent-native instruction
+formats:
+
+- `skillrunes export --target claude` writes
+  `.claude/skills/skillrunes-project-memory/SKILL.md`
+- `skillrunes export --target agents` updates a managed block in `AGENTS.md`
+- `skillrunes export --target all` does both
+
+Codex transcript ingestion is still not implemented. For Codex today, use the
+`AGENTS.md` export path as instruction memory.
+
+## Evals and Trace Export
+
+`skillrunes eval --latest` compares the latest two skill versions using local,
+deterministic checks for token deltas, duplicate-rule growth, repeated failure
+mentions, redaction cleanliness, and reusable pattern coverage.
+
+`skillrunes export-traces --format otel-json` writes redacted OTel-style JSON
+for analysed sessions under `.skillrunes/traces/`. Trace export re-applies
+redaction at export time and includes a minimal `skillrunes.skill_update` event
+for sessions that contributed extracted patterns to generated memory.
+
+Compression is deterministic and line-based: it prioritizes high-signal lines
+such as headings, failures, tests, and standing instructions, but very tight
+budgets may simplify Markdown structure.
+
 ## Local Files
 
 Running SkillRunes creates:
 
 - `.skillrunes/sessions/` — raw transcript archives and extracted summaries
 - `.skillrunes/skills/` — versioned `SKILL.md` history
+- `.skillrunes/exports/` — export metadata
+- `.skillrunes/evals/` — deterministic eval artifacts
+- `.skillrunes/traces/` — redacted trace exports
 - `.skillrunes/metrics.json` — dashboard metrics
 - `SKILL.md` — the current generated skill file
 

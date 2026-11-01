@@ -51,9 +51,13 @@ Output only the raw Markdown content — no code fences, no preamble.\
 def _build_user_message(
     summaries: list[SessionSummary],
     current_skill: str | None,
+    memory_seed: str = "",
 ) -> str:
     """Build the user-turn message that provides context to the synthesis call."""
     parts: list[str] = []
+
+    if memory_seed.strip():
+        parts.append(memory_seed.strip())
 
     if current_skill:
         parts.append("## Current SKILL.md\n\n" + current_skill)
@@ -107,6 +111,7 @@ def _extract_change_summary(skill_content: str) -> str:
 def generate_skill_file(
     summaries: list[SessionSummary],
     current_skill: str | None,
+    memory_seed: str = "",
 ) -> tuple[str, str]:
     """Generate an improved SKILL.md from session summaries and the current version.
 
@@ -123,7 +128,7 @@ def generate_skill_file(
         SkillVersion.change_summary for the dashboard diff view.
     """
     client = get_client()
-    user_message = _build_user_message(summaries, current_skill)
+    user_message = _build_user_message(summaries, current_skill, memory_seed)
     new_content = client.generate_text(SYNTHESIS_PROMPT, user_message)
     change_summary = _extract_change_summary(new_content)
     return new_content, change_summary

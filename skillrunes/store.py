@@ -17,7 +17,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from skillrunes.config import STORE_DIR_NAME
-from skillrunes.models import ProjectMetrics, SessionSummary, SkillVersion
+from skillrunes.models import (
+    EvalResult,
+    ProjectMetrics,
+    SessionSummary,
+    SkillExport,
+    SkillVersion,
+    TraceExport,
+)
 from skillrunes.utils import now_utc
 
 
@@ -38,6 +45,18 @@ def _metrics_path() -> Path:
     return _store_root() / "metrics.json"
 
 
+def _exports_dir() -> Path:
+    return _store_root() / "exports"
+
+
+def _evals_dir() -> Path:
+    return _store_root() / "evals"
+
+
+def _traces_dir() -> Path:
+    return _store_root() / "traces"
+
+
 # ---------------------------------------------------------------------------
 # Initialisation
 # ---------------------------------------------------------------------------
@@ -46,6 +65,9 @@ def init_store() -> None:
     """Create the .skillrunes/ folder structure if it does not exist."""
     _sessions_dir().mkdir(parents=True, exist_ok=True)
     _skills_dir().mkdir(parents=True, exist_ok=True)
+    _exports_dir().mkdir(parents=True, exist_ok=True)
+    _evals_dir().mkdir(parents=True, exist_ok=True)
+    _traces_dir().mkdir(parents=True, exist_ok=True)
     if not _metrics_path().exists():
         _atomic_write(_metrics_path(), ProjectMetrics().model_dump_json(indent=2))
 
@@ -122,7 +144,14 @@ def _next_version_number() -> int:
     return max(existing, default=0) + 1
 
 
-def save_skill_version(content: str, change_summary: str = "") -> SkillVersion:
+def save_skill_version(
+    content: str,
+    change_summary: str = "",
+    *,
+    token_estimate: int = 0,
+    compression_report=None,
+    reference_content: str = "",
+) -> SkillVersion:
     """Archive the new skill content and write SKILL.md to the project root.
 
     IMPORTANT: This function always archives the new content to
@@ -136,11 +165,18 @@ def save_skill_version(content: str, change_summary: str = "") -> SkillVersion:
         timestamp=now_utc(),
         content=content,
         change_summary=change_summary,
+        token_estimate=token_estimate,
+        compression_report=compression_report,
+        reference_content=reference_content,
     )
 
     # 1. Archive to version history first
     archive_path = _skills_dir() / f"v{version}.md"
     _atomic_write(archive_path, content)
+    _atomic_write(
+        _skills_dir() / f"v{version}.json",
+        skill_version.model_dump_json(indent=2),
+    )
 
     # 2. Write the canonical SKILL.md at the project root
     skill_path = Path.cwd() / "SKILL.md"
@@ -166,6 +202,13 @@ def load_skill_history() -> list[SkillVersion]:
         if not path.stem[1:].isdigit():
             continue
         version_num = int(path.stem[1:])
+        metadata_path = _skills_dir() / f"v{version_num}.json"
+        if metadata_path.exists():
+            try:
+                versions.append(SkillVersion.model_validate_json(metadata_path.read_text()))
+                continue
+            except Exception:
+                pass
         versions.append(
             SkillVersion(
                 version=version_num,
@@ -195,6 +238,66 @@ def load_metrics() -> ProjectMetrics | None:
         return ProjectMetrics.model_validate_json(path.read_text())
     except Exception:
         return None
+
+
+# ---------------------------------------------------------------------------
+# Exports, evals, and traces
+# ---------------------------------------------------------------------------
+
+def save_skill_exports(exports: list[SkillExport]) -> None:
+    """Persist export metadata."""
+    if not exports:
+        return
+    stamp = now_utc().strftime("%Y%m%d%H%M%S")
+    path = _exports_dir() / f"exports-{stamp}.json"
+    _atomic_write(path, "[" + ",".join(e.model_dump_json() for e in exports) + "]")
+
+
+def write_project_file(path: Path, content: str) -> None:
+    """Write a project file atomically."""
+    _atomic_write(Path.cwd() / path, content)
+
+
+def read_project_file(path: Path) -> str:
+    """Read a project file, returning an empty string if absent."""
+    full_path = Path.cwd() / path
+    if not full_path.exists():
+        return ""
+    return full_path.read_text(encoding="utf-8")
+
+
+def save_eval_result(result: EvalResult) -> Path:
+    """Persist one eval result JSON artifact."""
+    path = _evals_dir() / (
+        f"eval-v{result.before_version}-v{result.after_version}-"
+        f"{result.generated_at.strftime('%Y%m%d%H%M%S')}.json"
+    )
+    _atomic_write(path, result.model_dump_json(indent=2))
+    return path
+
+
+def save_trace_exports(exports: list[TraceExport]) -> Path:
+    """Persist trace exports as one JSON artifact."""
+    stamp = now_utc().strftime("%Y%m%d%H%M%S")
+    path = _traces_dir() / f"otel-traces-{stamp}.json"
+    _atomic_write(path, "[" + ",".join(e.model_dump_json() for e in exports) + "]")
+    return path
+
+
+def privacy_scan_paths() -> list[Path]:
+    """Return local files doctor privacy should scan."""
+    root = Path.cwd()
+    paths: list[Path] = []
+    for candidate in (root / "SKILL.md", root / "AGENTS.md"):
+        if candidate.exists():
+            paths.append(candidate)
+    for folder in (_sessions_dir(), _exports_dir(), _skills_dir()):
+        if folder.exists():
+            paths.extend(p for p in folder.rglob("*") if p.is_file())
+    claude_skill = root / ".claude" / "skills" / "skillrunes-project-memory"
+    if claude_skill.exists():
+        paths.extend(p for p in claude_skill.rglob("*") if p.is_file())
+    return paths
 
 
 # ---------------------------------------------------------------------------

@@ -19,14 +19,35 @@ from rich.panel import Panel
 from rich.progress import BarColumn, Progress, SpinnerColumn, TextColumn
 from rich.rule import Rule
 from rich.syntax import Syntax
+from rich.table import Table
 
 import skillrunes.store as store
+from skillrunes.compress import (
+    build_ranked_memory_seed,
+    compress_skill_content,
+    estimate_tokens,
+    validate_compression_mode,
+)
 from skillrunes.config import DEFAULT_PROVIDER, PROVIDER_ENV_VAR, SUPPORTED_PROVIDERS
+from skillrunes.evaluate import evaluate_skill_versions, latest_pair, version_pair
+from skillrunes.exporters import (
+    build_agents_update,
+    build_claude_skill,
+    diff_file,
+    validate_export_target,
+)
 from skillrunes.extract import analyze_session
 from skillrunes.ingest import get_provider
 from skillrunes.ingest.base import ProviderNotImplementedError
+from skillrunes.models import CompressionReport, EvalResult, SkillExport
+from skillrunes.redact import (
+    redact_messages_and_raw,
+    scan_paths,
+    validate_redaction_level,
+)
 from skillrunes.synthesize import generate_skill_file
-from skillrunes.utils import compute_metrics, render_skill_diff
+from skillrunes.traces import build_trace_exports
+from skillrunes.utils import compute_metrics, now_utc, render_skill_diff
 
 load_dotenv()
 
@@ -38,6 +59,9 @@ app = typer.Typer(
     help="Analyse coding-agent sessions and recursively improve a SKILL.md file.",
     no_args_is_help=True,
 )
+
+doctor_app = typer.Typer(help="Run local health and privacy checks.")
+app.add_typer(doctor_app, name="doctor")
 
 
 # ---------------------------------------------------------------------------
@@ -84,12 +108,34 @@ def run(
             f"Defaults to ${PROVIDER_ENV_VAR} or {DEFAULT_PROVIDER}."
         ),
     ),
+    redaction_level: str = typer.Option(
+        "basic",
+        "--redact-level",
+        help="Privacy redaction level: basic, strict, or off.",
+    ),
+    budget_tokens: int | None = typer.Option(
+        None,
+        "--budget-tokens",
+        help="Approximate token budget for generated SKILL.md content.",
+    ),
+    compression_mode: str = typer.Option(
+        "balanced",
+        "--compression-mode",
+        help="Compression mode: concise, balanced, or detailed.",
+    ),
 ) -> None:
     """Analyse new sessions and update SKILL.md."""
 
     # ── 1. Resolve and display cwd immediately ───────────────────────────────
     cwd = Path.cwd()
     console.print(Rule(f"[bold]SkillRunes[/bold]  •  {cwd}", style="dim"))
+    try:
+        redaction_level = validate_redaction_level(redaction_level)
+        compression_mode = validate_compression_mode(compression_mode)
+        _validate_budget(budget_tokens)
+    except ValueError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
     try:
         provider = get_provider(provider_name)
     except ValueError as exc:
@@ -102,6 +148,22 @@ def run(
     )
     if dry_run:
         console.print("[yellow]Dry run — no files will be written.[/yellow]\n")
+    if redaction_level == "off":
+        console.print(
+            Panel(
+                "[yellow]Redaction is off.[/yellow] Raw transcript text may be archived "
+                "and sent to the configured model client.",
+                title="Privacy warning",
+                border_style="yellow",
+            )
+        )
+    else:
+        console.print(f"[dim]Redaction:[/dim] [bold]{redaction_level}[/bold]")
+    if budget_tokens:
+        console.print(
+            f"[dim]Skill budget:[/dim] [bold]{budget_tokens:,}[/bold] tokens "
+            f"[dim]({compression_mode})[/dim]"
+        )
 
     # ── 2. Ensure store is initialised ───────────────────────────────────────
     store.init_store()
@@ -153,6 +215,10 @@ def run(
                 )
                 continue
 
+            messages, raw_lines, redaction_report = redact_messages_and_raw(
+                messages, raw_lines, redaction_level, cwd
+            )
+
             # Archive raw lines before any model call so originals are preserved
             # even if the provider later deletes or rotates the transcript.
             if not dry_run:
@@ -160,6 +226,7 @@ def run(
 
             try:
                 summary = analyze_session(messages, sid, raw_lines)
+                summary.redaction_report = redaction_report
             except Exception as exc:
                 err_console.print(
                     f"  [red]Error[/red] extracting {sid[:8]}…: {exc}"
@@ -185,12 +252,21 @@ def run(
     current_skill_content = current_skill_version.content if current_skill_version else None
 
     try:
+        memory_seed = build_ranked_memory_seed(new_summaries, compression_mode)
         new_skill_content, change_summary = generate_skill_file(
-            new_summaries, current_skill_content
+            new_summaries, current_skill_content, memory_seed
         )
     except Exception as exc:
         err_console.print(f"[red]Error[/red] synthesising SKILL.md: {exc}")
         raise typer.Exit(1) from exc
+
+    reference_content = ""
+    new_skill_content, reference_content, compression_report = compress_skill_content(
+        new_skill_content,
+        budget_tokens=budget_tokens,
+        mode=compression_mode,
+    )
+    _print_compression_report(compression_report)
 
     # ── 6. Show diff ─────────────────────────────────────────────────────────
     _print_skill_diff(current_skill_content, new_skill_content, current_skill_version)
@@ -211,15 +287,23 @@ def run(
     store.save_metrics(compute_metrics(all_summaries))
 
     # Save new skill version (archives to .skillrunes/skills/ then writes SKILL.md)
-    skill_version = store.save_skill_version(new_skill_content, change_summary)
+    skill_version = store.save_skill_version(
+        new_skill_content,
+        change_summary,
+        token_estimate=estimate_tokens(new_skill_content),
+        compression_report=compression_report,
+        reference_content=reference_content,
+    )
     console.print(
         f"\n[green]✓[/green] SKILL.md written "
-        f"([bold]v{skill_version.version}[/bold]  •  {len(new_skill_content)} chars)"
+        f"([bold]v{skill_version.version}[/bold]  •  "
+        f"{estimate_tokens(new_skill_content):,} est. tokens)"
     )
-
-    # ── 8. Auto-copy to provider-specific skill location when supported ──────
-    if provider.name == "claude_code":
-        _sync_to_claude_dir(cwd, new_skill_content, dry_run=False)
+    if reference_content:
+        console.print(
+            "[dim]Compression moved lower-priority detail into reference overflow "
+            "for future export targets.[/dim]"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -269,6 +353,225 @@ def visualize() -> None:
             )
             raise typer.Exit(1) from exc
         raise
+
+
+# ---------------------------------------------------------------------------
+# doctor privacy
+# ---------------------------------------------------------------------------
+
+@doctor_app.command("privacy")
+def doctor_privacy(
+    level: str = typer.Option(
+        "basic",
+        "--level",
+        help="Privacy scan level: basic or strict.",
+    )
+) -> None:
+    """Scan local SkillRunes artifacts for likely secrets."""
+    try:
+        level = validate_redaction_level(level)
+    except ValueError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    if level == "off":
+        err_console.print("[red]Error:[/red] doctor privacy supports only basic or strict.")
+        raise typer.Exit(1)
+    store.init_store()
+    report = scan_paths(store.privacy_scan_paths(), Path.cwd(), level=level)
+    if not report.detector_counts:
+        console.print("[green]✓[/green] No likely secrets found in SkillRunes artifacts.")
+        return
+
+    table = Table(title="Privacy findings")
+    table.add_column("Detector")
+    table.add_column("Count", justify="right")
+    for detector, count in sorted(report.detector_counts.items()):
+        table.add_row(detector, str(count))
+    console.print(table)
+    console.print("[yellow]Files with findings:[/yellow]")
+    for field in report.redacted_fields:
+        console.print(f"  - {field}")
+    raise typer.Exit(1)
+
+
+# ---------------------------------------------------------------------------
+# prune
+# ---------------------------------------------------------------------------
+
+@app.command()
+def prune(
+    budget_tokens: int = typer.Option(..., "--budget-tokens", help="Approximate token budget."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show the diff without writing."),
+    compression_mode: str = typer.Option("balanced", "--compression-mode"),
+) -> None:
+    """Recompress the current SKILL.md without ingesting sessions."""
+    try:
+        compression_mode = validate_compression_mode(compression_mode)
+        _validate_budget(budget_tokens)
+    except ValueError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    store.init_store()
+    current = store.load_current_skill()
+    if current is None:
+        err_console.print("[red]Error:[/red] No skill versions found. Run skillrunes run first.")
+        raise typer.Exit(1)
+
+    compressed, reference, report = compress_skill_content(
+        current.content,
+        budget_tokens=budget_tokens,
+        mode=compression_mode,
+    )
+    _print_compression_report(report)
+    _print_skill_diff(current.content, compressed, current)
+    if dry_run:
+        console.print("[yellow]Dry run — prune did not write a new skill version.[/yellow]")
+        return
+    version = store.save_skill_version(
+        compressed,
+        "Recompressed SkillRunes memory to fit the configured token budget.",
+        token_estimate=estimate_tokens(compressed),
+        compression_report=report,
+        reference_content=reference,
+    )
+    console.print(f"[green]✓[/green] Wrote compressed SKILL.md v{version.version}")
+    if reference:
+        console.print("[dim]Reference overflow will be regenerated during export.[/dim]")
+
+
+# ---------------------------------------------------------------------------
+# export
+# ---------------------------------------------------------------------------
+
+@app.command("export")
+def export_memory(
+    target: str = typer.Option(..., "--target", help="Export target: claude, agents, or all."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Show diffs without writing."),
+    budget_tokens: int | None = typer.Option(None, "--budget-tokens"),
+    compression_mode: str = typer.Option("balanced", "--compression-mode"),
+) -> None:
+    """Export current memory to agent-native instruction formats."""
+    try:
+        target = validate_export_target(target)
+        compression_mode = validate_compression_mode(compression_mode)
+        _validate_budget(budget_tokens)
+    except ValueError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    store.init_store()
+    current = store.load_current_skill()
+    if current is None:
+        err_console.print("[red]Error:[/red] No skill versions found. Run skillrunes run first.")
+        raise typer.Exit(1)
+
+    content, reference, report = compress_skill_content(
+        current.content,
+        budget_tokens=budget_tokens,
+        mode=compression_mode,
+    )
+    combined_reference = "\n\n".join(
+        part.strip() for part in (current.reference_content, reference) if part.strip()
+    )
+    skill = current.model_copy(
+        update={
+            "content": content,
+            "token_estimate": estimate_tokens(content),
+            "compression_report": report,
+            "reference_content": combined_reference,
+        }
+    )
+    targets = ("claude", "agents") if target == "all" else (target,)
+    exports = []
+
+    for item in targets:
+        if item == "claude":
+            files, metadata = build_claude_skill(skill, combined_reference)
+            exports.extend(metadata)
+            for path, new_content in files.items():
+                old = store.read_project_file(path)
+                if dry_run:
+                    _print_export_diff(path, old, new_content)
+                else:
+                    store.write_project_file(path, new_content)
+                    console.print(f"[green]✓[/green] Exported {path}")
+        elif item == "agents":
+            path = Path("AGENTS.md")
+            old = store.read_project_file(path)
+            new = build_agents_update(old, skill)
+            exports.append(metadata_for_agents(path, skill.version, new))
+            if dry_run:
+                _print_export_diff(path, old, new)
+            else:
+                store.write_project_file(path, new)
+                console.print(f"[green]✓[/green] Updated {path}")
+
+    if not dry_run:
+        store.save_skill_exports(exports)
+    else:
+        console.print("[yellow]Dry run — no exports were written.[/yellow]")
+
+
+# ---------------------------------------------------------------------------
+# eval
+# ---------------------------------------------------------------------------
+
+@app.command("eval")
+def eval_memory(
+    latest: bool = typer.Option(False, "--latest", help="Compare the latest two skill versions."),
+    before_version: int | None = typer.Option(None, "--before", help="Before version number."),
+    after_version: int | None = typer.Option(None, "--after", help="After version number."),
+) -> None:
+    """Run deterministic memory-quality evals."""
+    store.init_store()
+    history = store.load_skill_history()
+    try:
+        before, after = (
+            latest_pair(history)
+            if latest or before_version is None or after_version is None
+            else version_pair(history, before_version, after_version)
+        )
+        result = evaluate_skill_versions(before, after, store.load_all_summaries())
+    except ValueError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+
+    path = store.save_eval_result(result)
+    _print_eval_result(result)
+    console.print(f"[green]✓[/green] Eval artifact written to {path}")
+
+
+# ---------------------------------------------------------------------------
+# export-traces
+# ---------------------------------------------------------------------------
+
+@app.command("export-traces")
+def export_traces(
+    trace_format: str = typer.Option("otel-json", "--format", help="Trace format: otel-json."),
+    provider: str = typer.Option("unknown", "--provider", help="Provider label for exported traces."),
+    redaction_level: str = typer.Option(
+        "basic",
+        "--redact-level",
+        help="Export-time redaction level: basic or strict.",
+    ),
+) -> None:
+    """Export analysed sessions as redacted OTel-style JSON."""
+    if trace_format != "otel-json":
+        err_console.print("[red]Error:[/red] Only --format otel-json is supported.")
+        raise typer.Exit(1)
+    try:
+        redaction_level = validate_redaction_level(redaction_level)
+    except ValueError as exc:
+        err_console.print(f"[red]Error:[/red] {exc}")
+        raise typer.Exit(1) from exc
+    if redaction_level == "off":
+        err_console.print("[red]Error:[/red] trace export requires basic or strict redaction.")
+        raise typer.Exit(1)
+    store.init_store()
+    exports = build_trace_exports(store.load_all_summaries(), provider, redaction_level=redaction_level)
+    path = store.save_trace_exports(exports)
+    console.print(f"[green]✓[/green] Exported {len(exports)} trace(s) to {path}")
 
 
 # ---------------------------------------------------------------------------
@@ -335,33 +638,50 @@ def _print_skill_diff(
     )
 
 
-def _sync_to_claude_dir(cwd: Path, skill_content: str, *, dry_run: bool) -> None:
-    """Copy SKILL.md to .claude/SKILL.md if the .claude/ directory exists.
-
-    This closes the product loop: SKILL.md is generated → Claude Code loads it
-    on the next session automatically without the user having to do anything.
-
-    If .claude/ does not exist, print a tip explaining how to enable this.
-    """
-    claude_dir = cwd / ".claude"
-
-    if not claude_dir.is_dir():
-        console.print(
-            "\n[dim]Tip:[/dim] Create a [bold].claude/[/bold] folder in your project root "
-            "and SkillRunes will automatically place SKILL.md there for Claude Code to load."
-        )
-        return
-
-    if dry_run:
-        console.print(
-            f"\n[dim]Dry run:[/dim] would copy SKILL.md → "
-            f"[bold]{claude_dir / 'SKILL.md'}[/bold]"
-        )
-        return
-
-    dest = claude_dir / "SKILL.md"
-    dest.write_text(skill_content, encoding="utf-8")
+def _print_compression_report(report: CompressionReport) -> None:
     console.print(
-        f"[green]✓[/green] Copied SKILL.md → [bold]{dest}[/bold]  "
-        f"[dim](Claude Code will load this on the next session)[/dim]"
+        "[dim]Compression:[/dim] "
+        f"{report.estimated_tokens_before:,} → {report.estimated_tokens_after:,} "
+        f"est. tokens [dim]({report.mode}, budget {report.budget_tokens:,}; "
+        f"moved {report.moved_count})[/dim]"
     )
+
+
+def _validate_budget(budget_tokens: int | None) -> None:
+    if budget_tokens is not None and budget_tokens <= 0:
+        raise ValueError("--budget-tokens must be a positive integer.")
+
+
+def _print_export_diff(path: Path, old: str, new: str) -> None:
+    diff_text = diff_file(path, old, new)
+    if not diff_text.strip():
+        console.print(f"[dim]No changes for {path}.[/dim]")
+        return
+    console.print(
+        Panel(
+            Syntax(diff_text, "diff", theme="monokai", line_numbers=False),
+            title=f"Export diff • {path}",
+            border_style="blue",
+        )
+    )
+
+
+def metadata_for_agents(path: Path, version: int, content: str) -> SkillExport:
+    return SkillExport(
+        target="agents",
+        path=str(path),
+        version=version,
+        token_estimate=estimate_tokens(content),
+        generated_at=now_utc(),
+    )
+
+
+def _print_eval_result(result: EvalResult) -> None:
+    table = Table(title=f"SkillRunes eval v{result.before_version} → v{result.after_version}")
+    table.add_column("Check")
+    table.add_column("Result")
+    for name, passed in result.checks.items():
+        table.add_row(name, "[green]pass[/green]" if passed else "[red]fail[/red]")
+    for name, value in result.metrics.items():
+        table.add_row(name, str(value))
+    console.print(table)

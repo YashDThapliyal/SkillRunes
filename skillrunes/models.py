@@ -145,6 +145,7 @@ class SessionSummary(BaseModel):
     compaction_occurred: bool = False
     analyzed_at: datetime
     message_count: int = 0
+    redaction_report: "RedactionReport | None" = None
 
 
 # ---------------------------------------------------------------------------
@@ -164,6 +165,74 @@ class SkillVersion(BaseModel):
     timestamp: datetime
     content: str
     change_summary: str = ""
+    token_estimate: int = 0
+    compression_report: "CompressionReport | None" = None
+    reference_content: str = ""
+
+
+# ---------------------------------------------------------------------------
+# Privacy, compression, export, eval, and trace models
+# ---------------------------------------------------------------------------
+
+class RedactionReport(BaseModel):
+    """Summary of redactions applied to a transcript or file scan."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    level: str
+    detector_counts: dict[str, int] = {}
+    redacted_fields: list[str] = []
+    timestamp: datetime
+
+
+class CompressionReport(BaseModel):
+    """Token-budget report for generated project memory."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    mode: str
+    budget_tokens: int
+    estimated_tokens_before: int
+    estimated_tokens_after: int
+    kept_count: int = 0
+    moved_count: int = 0
+    dropped_count: int = 0
+
+
+class SkillExport(BaseModel):
+    """One generated export to an agent-native instruction target."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    target: str
+    path: str
+    version: int
+    token_estimate: int
+    generated_at: datetime
+
+
+class EvalResult(BaseModel):
+    """Deterministic comparison of two skill versions."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    before_version: int
+    after_version: int
+    metrics: dict[str, float | int | str | bool] = {}
+    checks: dict[str, bool] = {}
+    generated_at: datetime
+
+
+class TraceExport(BaseModel):
+    """OTel-style trace export for analysed sessions."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    session_id: str
+    provider: str
+    spans: list[dict[str, Any]] = []
+    redaction_report: RedactionReport | None = None
+    generated_at: datetime
 
 
 # ---------------------------------------------------------------------------
