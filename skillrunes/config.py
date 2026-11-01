@@ -33,7 +33,5 @@ MAX_MESSAGES_PER_CHUNK = 200
 # Root folder where Claude Code writes session transcripts
 CLAUDE_PROJECTS_ROOT = "~/.claude/projects"
 
-# Known local Codex transcript roots.  The directory may exist before a stable
-# JSONL transcript format is available, so CodexProvider still raises a clear
-# not-implemented error until parsing support is added.
+# Known local Codex transcript roots, searched recursively for rollout-*.jsonl.
 CODEX_SESSION_ROOTS = ("~/.codex/sessions", "~/.Codex/sessions", "~/.Codex/projects")
