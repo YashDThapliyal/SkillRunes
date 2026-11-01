@@ -54,7 +54,7 @@ def bench_run(
     """Run suite tasks headlessly under each arm and record results."""
     suite, tasks, arms = _load_plan(suite_path, split, task_ids, arm_specs)
     _require_subscription()
-    run_dir = out or store.bench_dir(suite.name)
+    run_dir = (out or store.bench_dir(suite.name)).resolve()
     rounds = feedback_rounds if feedback_rounds is not None else (1 if split == "train" else 0)
     config = RunConfig(model=model, out_dir=run_dir, feedback_rounds=rounds, keep_workspaces=keep_workspaces)
 
@@ -90,7 +90,7 @@ def bench_learn(
         err_console.print("[red]Error:[/red] --synthesis must be rewrite or delta.")
         raise typer.Exit(1)
     _require_subscription()
-    run_dir = out or store.bench_dir(suite_name)
+    run_dir = (out or store.bench_dir(suite_name)).resolve()
     try:
         content, summaries = learn_skill(
             load_results(run_dir), budget_tokens=budget_tokens, workers=workers, synthesis=synthesis
@@ -133,7 +133,7 @@ def bench_report(
     as_json: bool = typer.Option(False, "--json"),
 ) -> None:
     """Summarise results, compare arms with paired bootstrap CIs, optionally gate."""
-    run_dir = out or store.bench_dir(suite_name)
+    run_dir = (out or store.bench_dir(suite_name)).resolve()
     results = load_results(run_dir)
     if not results:
         err_console.print(f"[red]Error:[/red] No results in {run_dir}.")

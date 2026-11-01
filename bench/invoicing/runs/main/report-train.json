@@ -1,0 +1,32 @@
+{
+  "suite": "invoicing",
+  "split": "train",
+  "arms": [
+    {
+      "arm": "none",
+      "runs": 15,
+      "pass_rate": 1.0,
+      "pass_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "criteria_rates": {
+        "changelog": 1.0,
+        "decimal_money": 1.0,
+        "documented_api": 1.0,
+        "domain_errors": 1.0,
+        "functional": 1.0,
+        "legacy_untouched": 1.0,
+        "no_print": 1.0
+      },
+      "mean_turns": 4.93,
+      "mean_tokens": 74093.6,
+      "mean_tool_errors": 0.0,
+      "mean_retries": 0.0,
+      "mean_duration_seconds": 10.2,
+      "agent_errors": 0
+    }
+  ],
+  "comparisons": [],
+  "generated_at": "2026-11-01T10:11:09.457284Z"
+}

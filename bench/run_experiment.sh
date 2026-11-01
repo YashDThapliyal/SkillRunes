@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Full SkillRunes held-out experiment on the invoicing suite.
+# Full SkillRunes held-out experiment on one bench suite.
+#
+#   bench/run_experiment.sh [suite]     suite = invoicing (default) | invoicing_tacit
 #
 #   1. train:  5 train tasks x 3 seeds, no instruction file, 1 reviewer-feedback round
 #   2. learn:  SkillRunes (rewrite + delta) from train transcripts; one-shot /init baseline
@@ -11,9 +13,11 @@
 # Resumable: re-running skips runs already in results.jsonl.
 set -euo pipefail
 
-cd "$(dirname "$0")/../.."
-SUITE=bench/invoicing/suite.toml
-OUT=bench/invoicing/runs/${RUN_NAME:-main}
+cd "$(dirname "$0")/.."
+SUITE_NAME=${1:-invoicing}
+SUITE=bench/$SUITE_NAME/suite.toml
+OUT=bench/$SUITE_NAME/runs/${RUN_NAME:-main}
+[ -f "$SUITE" ] || { echo "No suite at $SUITE" >&2; exit 1; }
 WORKERS=${WORKERS:-6}
 SR=${SKILLRUNES:-.venv/bin/skillrunes}
 
@@ -33,6 +37,6 @@ $SR bench run --suite $SUITE --split test --seeds 5 --workers "$WORKERS" --out "
   --arm delta="$OUT/skillrunes-delta-skill.md"
 
 echo "== 4/4 report"
-$SR bench report --out "$OUT" --split train --baseline none || true
-$SR bench report --out "$OUT" --split test --baseline none --gate skillrunes || true
-$SR bench report --out "$OUT" --split test --baseline oneshot --gate skillrunes || true
+$SR bench report --out "$OUT" --suite-name "$SUITE_NAME" --split train --baseline none || true
+$SR bench report --out "$OUT" --suite-name "$SUITE_NAME" --split test --baseline none --gate skillrunes || true
+$SR bench report --out "$OUT" --suite-name "$SUITE_NAME" --split test --baseline oneshot --gate skillrunes || true

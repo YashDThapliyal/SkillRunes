@@ -44,3 +44,6 @@ htmlcov/
 
 # macOS
 .DS_Store
+
+# Bench run transcripts (large; results.jsonl + reports are committed)
+bench/*/runs/*/transcripts/
