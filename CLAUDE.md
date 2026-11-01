@@ -5,9 +5,9 @@ A Python CLI tool that reads coding-agent session transcripts through provider m
 analyzes them using a model client, recursively improves a SKILL.md file, and optionally
 launches a local observability dashboard. Distributed as a PyPI package.
 
-Claude Code is the first working provider and reads JSONL files from ~/.claude/projects/.
-Codex is a planned / experimental provider path and should fail with a clear
-not-implemented error until transcript parsing is implemented.
+Providers: Claude Code (JSONL in ~/.claude/projects/) and Codex CLI (rollout
+JSONL in ~/.codex/sessions/). `skillrunes bench` runs headless `claude -p`
+agents and must only ever bill the logged-in subscription (see billing.py).
 
 ## Stack
 - Python 3.11+

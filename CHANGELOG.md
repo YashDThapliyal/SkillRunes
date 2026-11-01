@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.0
+
+### Added
+
+- Deterministic behaviour signals per session (tool calls/errors, retry loops,
+  user corrections, interruptions, errors by tool); tool results are now parsed.
+- Codex CLI provider for `~/.codex/sessions` rollout transcripts.
+- `skillrunes impact`: per-skill-version cohorts with 95% bootstrap CIs, signal
+  backfill from raw archives, dashboard chart and `/api/impact`.
+- `skillrunes bench run|learn|oneshot|report`: isolated, parallel, resumable
+  replay benchmark with paired comparisons and a non-inferiority gate.
+- Bundled `invoicing` benchmark suite (5 train / 8 test tasks, hidden reviewer).
+- `run --synthesis delta`: ACE-style rule-level memory (`.skillrunes/rules.json`).
+- `export-traces --format otlp-json [--endpoint URL]` with OpenTelemetry GenAI
+  semantic conventions.
+- `--billing auto|subscription|api` and `SKILLRUNES_BILLING`.
+
+### Fixed
+
+- Dashboard index crashed on Starlette >= 1.0 (`TemplateResponse` signature).
+- Redaction now covers tool result content.
+- Skill history loading no longer crashes on non-numeric `v*.md` files.
+
+### Security/Privacy
+
+- `claude` subprocesses never inherit `ANTHROPIC_API_KEY`/`ANTHROPIC_AUTH_TOKEN`.
+- OTLP export includes tool names and timing only, never tool inputs/outputs.
+
 ## 0.2.0
 
 ### Added
