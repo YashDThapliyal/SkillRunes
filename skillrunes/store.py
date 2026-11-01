@@ -23,6 +23,7 @@ from skillrunes.models import (
     EvalResult,
     ImpactReport,
     ProjectMetrics,
+    RuleBook,
     SessionSummary,
     SkillExport,
     SkillVersion,
@@ -62,6 +63,10 @@ def _traces_dir() -> Path:
 
 def _impact_path() -> Path:
     return _store_root() / "impact.json"
+
+
+def _rulebook_path() -> Path:
+    return _store_root() / "rules.json"
 
 
 def bench_dir(suite_name: str) -> Path:
@@ -307,6 +312,28 @@ def load_impact_report() -> ImpactReport | None:
         return ImpactReport.model_validate_json(path.read_text())
     except (OSError, ValueError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Rule-level memory
+# ---------------------------------------------------------------------------
+
+def load_rulebook() -> RuleBook:
+    """Return the saved rulebook, or an empty one."""
+    path = _rulebook_path()
+    if not path.exists():
+        return RuleBook()
+    try:
+        return RuleBook.model_validate_json(path.read_text())
+    except (OSError, ValueError):
+        return RuleBook()
+
+
+def save_rulebook(book: RuleBook) -> Path:
+    """Persist the rulebook to .skillrunes/rules.json."""
+    path = _rulebook_path()
+    _atomic_write(path, book.model_dump_json(indent=2))
+    return path
 
 
 # ---------------------------------------------------------------------------

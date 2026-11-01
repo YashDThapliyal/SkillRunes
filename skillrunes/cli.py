@@ -46,13 +46,14 @@ from skillrunes.exporters import (
 from skillrunes.extract import analyze_session
 from skillrunes.ingest import get_provider
 from skillrunes.ingest.base import ProviderNotImplementedError
-from skillrunes.models import CompressionReport, EvalResult, SkillExport
+from skillrunes.curate import apply_deltas, render_rulebook, rulebook_for_prompt
+from skillrunes.models import CompressionReport, CurationReport, EvalResult, RuleBook, SkillExport
 from skillrunes.redact import (
     redact_messages_and_raw,
     scan_paths,
     validate_redaction_level,
 )
-from skillrunes.synthesize import generate_skill_file
+from skillrunes.synthesize import generate_skill_file, propose_rule_deltas
 from skillrunes.traces import build_trace_exports
 from skillrunes.utils import compute_metrics, now_utc, render_skill_diff
 
@@ -133,6 +134,14 @@ def run(
         "--compression-mode",
         help="Compression mode: concise, balanced, or detailed.",
     ),
+    synthesis: str = typer.Option(
+        "rewrite",
+        "--synthesis",
+        help=(
+            "rewrite: regenerate SKILL.md as a whole. delta: ACE-style rule edits "
+            "with ids, provenance, helpful/harmful votes and collapse guards."
+        ),
+    ),
     billing: str | None = typer.Option(
         None,
         "--billing",
@@ -152,6 +161,8 @@ def run(
         compression_mode = validate_compression_mode(compression_mode)
         _validate_budget(budget_tokens)
         billing = resolve_billing_mode(billing)
+        if synthesis not in SYNTHESIS_MODES:
+            raise ValueError(f"--synthesis must be one of: {', '.join(SYNTHESIS_MODES)}")
     except ValueError as exc:
         err_console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
@@ -273,11 +284,17 @@ def run(
     current_skill_version = store.load_current_skill()
     current_skill_content = current_skill_version.content if current_skill_version else None
 
+    new_rulebook = None
     try:
-        memory_seed = build_ranked_memory_seed(new_summaries, compression_mode)
-        new_skill_content, change_summary = generate_skill_file(
-            new_summaries, current_skill_content, memory_seed, billing=billing
-        )
+        if synthesis == "delta":
+            new_rulebook, new_skill_content, change_summary = _synthesise_delta(
+                new_summaries, billing
+            )
+        else:
+            memory_seed = build_ranked_memory_seed(new_summaries, compression_mode)
+            new_skill_content, change_summary = generate_skill_file(
+                new_summaries, current_skill_content, memory_seed, billing=billing
+            )
     except Exception as exc:
         err_console.print(f"[red]Error[/red] synthesising SKILL.md: {exc}")
         raise typer.Exit(1) from exc
@@ -307,6 +324,9 @@ def run(
 
     all_summaries = store.load_all_summaries()
     store.save_metrics(compute_metrics(all_summaries))
+
+    if new_rulebook is not None:
+        store.save_rulebook(new_rulebook)
 
     # Save new skill version (archives to .skillrunes/skills/ then writes SKILL.md)
     skill_version = store.save_skill_version(
@@ -599,6 +619,39 @@ def export_traces(
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
+
+SYNTHESIS_MODES = ("rewrite", "delta")
+
+
+def _synthesise_delta(
+    summaries: list["SessionSummary"],  # type: ignore[name-defined]
+    billing: str,
+) -> tuple[RuleBook, str, str]:
+    """Propose + apply rule deltas; return (new book, rendered skill, summary)."""
+    book = store.load_rulebook()
+    deltas = propose_rule_deltas(summaries, rulebook_for_prompt(book), billing=billing)
+    new_book, report = apply_deltas(book, deltas)
+    _print_curation_report(report)
+    change_summary = (
+        f"Delta curation: +{len(report.added)} added, {len(report.updated)} updated, "
+        f"{len(report.removed)} removed, {len(report.pruned)} pruned, "
+        f"{len(report.merged_duplicates)} duplicate(s) merged."
+    )
+    return new_book, render_rulebook(new_book), change_summary
+
+
+def _print_curation_report(report: CurationReport) -> None:
+    parts = [
+        f"[green]+{len(report.added)}[/green] added",
+        f"{len(report.updated)} updated",
+        f"[red]-{len(report.removed)}[/red] removed",
+        f"{len(report.pruned)} pruned",
+        f"{len(report.merged_duplicates)} merged",
+    ]
+    console.print("[dim]Curation:[/dim] " + " · ".join(parts))
+    for rejected in report.rejected:
+        console.print(f"  [yellow]rejected[/yellow] {rejected}")
+
 
 def _print_session_panel(summary: "SessionSummary") -> None:  # type: ignore[name-defined]
     lines: list[str] = [

@@ -22,9 +22,10 @@ from skillrunes.bench.runner import INSTRUCTION_FILE, prepare_workspace, run_age
 from skillrunes.compress import build_ranked_memory_seed, compress_skill_content
 from skillrunes.extract import analyze_session
 from skillrunes.ingest.claude_code import ClaudeCodeProvider
-from skillrunes.models import BenchArm, BenchRunResult, BenchSuite, SessionSummary
+from skillrunes.models import BenchArm, BenchRunResult, BenchSuite, RuleBook, SessionSummary
 from skillrunes.redact import redact_messages_and_raw
-from skillrunes.synthesize import generate_skill_file
+from skillrunes.curate import apply_deltas, render_rulebook, rulebook_for_prompt
+from skillrunes.synthesize import generate_skill_file, propose_rule_deltas
 
 ONESHOT_PROMPT = (
     "Please analyze this codebase and create a CLAUDE.md file in the repository "
@@ -40,8 +41,13 @@ def learn_skill(
     *,
     budget_tokens: int | None = None,
     workers: int = 4,
+    synthesis: str = "rewrite",
 ) -> tuple[str, list[SessionSummary]]:
-    """Run SkillRunes extraction + synthesis over train-split transcripts."""
+    """Run SkillRunes extraction + synthesis over train-split transcripts.
+
+    synthesis="rewrite" generates SKILL.md in one pass; "delta" builds it from
+    an empty rulebook via ACE-style rule operations (for ablations).
+    """
     train = [r for r in results if r.split == "train" and r.transcript_path]
     if not train:
         raise ValueError("No train-split transcripts found; run `bench run --split train` first.")
@@ -49,8 +55,13 @@ def learn_skill(
         summaries = [s for s in pool.map(_summarise_run, train) if s is not None]
     if not summaries:
         raise ValueError("No train transcripts produced a summary.")
-    seed = build_ranked_memory_seed(summaries, "balanced")
-    content, _ = generate_skill_file(summaries, None, seed, billing=_BILLING)
+    if synthesis == "delta":
+        deltas = propose_rule_deltas(summaries, rulebook_for_prompt(RuleBook()), billing=_BILLING)
+        book, _ = apply_deltas(RuleBook(), deltas)
+        content = render_rulebook(book)
+    else:
+        seed = build_ranked_memory_seed(summaries, "balanced")
+        content, _ = generate_skill_file(summaries, None, seed, billing=_BILLING)
     content, _, _ = compress_skill_content(content, budget_tokens=budget_tokens, mode="balanced")
     return content, summaries
 

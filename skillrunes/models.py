@@ -538,3 +538,66 @@ class BenchReport(BaseModel):
     arms: list[ArmSummary] = []
     comparisons: list[ArmComparison] = []
     generated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Rule-level memory (ACE-style incremental curation)
+# ---------------------------------------------------------------------------
+
+class SkillRule(BaseModel):
+    """One curated rule in the project memory, with provenance and feedback."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    id: str
+    section: str
+    text: str
+    source_sessions: tuple[str, ...] = ()
+    helpful: int = 0
+    harmful: int = 0
+    created_version: int = 0
+    updated_version: int = 0
+
+    @property
+    def net_score(self) -> int:
+        return self.helpful - self.harmful
+
+
+class RuleDelta(BaseModel):
+    """One edit proposed by the model against the current rulebook.
+
+    op is add | update | remove | helpful | harmful.  add needs section+text;
+    update needs rule_id+text; the others need rule_id.
+    """
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    op: str
+    rule_id: str = ""
+    section: str = ""
+    text: str = ""
+    session_ids: tuple[str, ...] = ()
+    reason: str = ""
+
+
+class CurationReport(BaseModel):
+    """What happened when deltas were applied to a rulebook."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    added: list[str] = []
+    updated: list[str] = []
+    removed: list[str] = []
+    merged_duplicates: list[str] = []
+    pruned: list[str] = []
+    rejected: list[str] = []
+
+
+class RuleBook(BaseModel):
+    """The full rule-level memory; rendered to SKILL.md for agents."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    version: int = 0
+    next_id: int = 1
+    rules: tuple[SkillRule, ...] = ()

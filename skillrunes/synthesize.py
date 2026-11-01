@@ -11,8 +11,10 @@ here directly.  No file I/O is performed here.
 
 import json
 
+from anthropic.types import ToolParam
+
 from skillrunes.client import get_client
-from skillrunes.models import SessionSummary
+from skillrunes.models import RuleDelta, SessionSummary
 
 # ---------------------------------------------------------------------------
 # Prompt constant — edit this to iterate on synthesis quality
@@ -67,6 +69,13 @@ def _build_user_message(
             "(No existing SKILL.md — create one from scratch based on the sessions below.)"
         )
 
+    parts.append(_summaries_block(summaries))
+
+    return "\n\n---\n\n".join(parts)
+
+
+def _summaries_block(summaries: list[SessionSummary]) -> str:
+    """Render session summaries (plus measured signals) as a JSON section."""
     summary_dicts = [
         {
             "session_id": s.session_id,
@@ -77,15 +86,27 @@ def _build_user_message(
             "patterns": s.patterns,
             "token_count": s.token_count,
             "duration_seconds": round(s.duration_seconds, 1),
+            "measured": _signals_dict(s),
         }
         for s in summaries
     ]
-    parts.append(
+    return (
         f"## New session summaries ({len(summaries)} session(s))\n\n"
         + json.dumps(summary_dicts, indent=2)
     )
 
-    return "\n\n---\n\n".join(parts)
+
+def _signals_dict(summary: SessionSummary) -> dict[str, object]:
+    if summary.signals is None:
+        return {}
+    sig = summary.signals
+    return {
+        "tool_errors": sig.tool_errors,
+        "retry_loops": sig.retry_loops,
+        "user_corrections": sig.user_corrections,
+        "interruptions": sig.interruptions,
+        "errors_by_tool": sig.errors_by_tool,
+    }
 
 
 def _extract_change_summary(skill_content: str) -> str:
@@ -133,3 +154,79 @@ def generate_skill_file(
     new_content = client.generate_text(SYNTHESIS_PROMPT, user_message)
     change_summary = _extract_change_summary(new_content)
     return new_content, change_summary
+
+
+# ---------------------------------------------------------------------------
+# Delta mode (ACE-style): propose rule edits instead of rewriting the file
+# ---------------------------------------------------------------------------
+
+DELTA_PROMPT = """\
+You curate a rule-level memory for an AI coding assistant working on one \
+software project. Rules are injected into every future session, so each one \
+costs context: keep only concrete, project-specific, actionable guidance.
+
+You receive the current rules (with ids and helpful/harmful vote counts) and \
+summaries of new sessions. Propose a SMALL set of edit operations:
+
+- add:     a new rule the sessions show is needed (section + text + session_ids).
+           Prefer conventions the user or a reviewer had to correct, and \
+failures that recurred. Do not add generic advice ("write tests", "be careful").
+- update:  sharpen an existing rule's wording (rule_id + text).
+- helpful: an existing rule that the sessions show was followed and paid off.
+- harmful: an existing rule that misled the agent or is contradicted by the sessions.
+- remove:  a rule that is clearly obsolete or wrong. Use sparingly.
+
+Never restate the whole rulebook. Return an empty list when nothing should change. \
+Cite the session_ids that justify each operation.\
+"""
+
+DELTA_TOOL_SCHEMA: ToolParam = {
+    "name": "propose_rule_deltas",
+    "description": "Propose incremental edits to the project rulebook.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "operations": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "op": {"type": "string", "enum": ["add", "update", "remove", "helpful", "harmful"]},
+                        "rule_id": {"type": "string"},
+                        "section": {"type": "string"},
+                        "text": {"type": "string"},
+                        "session_ids": {"type": "array", "items": {"type": "string"}},
+                        "reason": {"type": "string"},
+                    },
+                    "required": ["op"],
+                },
+            }
+        },
+        "required": ["operations"],
+    },
+}
+
+
+def propose_rule_deltas(
+    summaries: list[SessionSummary],
+    rules_listing: str,
+    billing: str | None = None,
+) -> list[RuleDelta]:
+    """Ask the model for incremental rulebook edits justified by new sessions."""
+    client = get_client(billing)
+    user_message = (
+        "## Current rules\n\n"
+        + rules_listing
+        + "\n\n---\n\n"
+        + _summaries_block(summaries)
+    )
+    raw = client.extract_structured(DELTA_PROMPT, user_message, DELTA_TOOL_SCHEMA)
+    deltas: list[RuleDelta] = []
+    for item in raw.get("operations", []) or []:
+        if not isinstance(item, dict):
+            continue
+        try:
+            deltas.append(RuleDelta(**{**item, "session_ids": tuple(item.get("session_ids") or ())}))
+        except ValueError:
+            continue
+    return deltas

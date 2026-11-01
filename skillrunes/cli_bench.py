@@ -83,16 +83,23 @@ def bench_learn(
     write: Path | None = typer.Option(None, "--write", help="Where to write the learned skill."),
     budget_tokens: int | None = typer.Option(None, "--budget-tokens", min=1),
     workers: int = typer.Option(4, "--workers", min=1),
+    synthesis: str = typer.Option("rewrite", "--synthesis", help="rewrite or delta (ACE-style)."),
 ) -> None:
     """Learn a SKILL.md from train-split transcripts using the SkillRunes pipeline."""
+    if synthesis not in ("rewrite", "delta"):
+        err_console.print("[red]Error:[/red] --synthesis must be rewrite or delta.")
+        raise typer.Exit(1)
     _require_subscription()
     run_dir = out or store.bench_dir(suite_name)
     try:
-        content, summaries = learn_skill(load_results(run_dir), budget_tokens=budget_tokens, workers=workers)
+        content, summaries = learn_skill(
+            load_results(run_dir), budget_tokens=budget_tokens, workers=workers, synthesis=synthesis
+        )
     except ValueError as exc:
         err_console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
-    path = store.write_text_file(write or run_dir / "skillrunes-skill.md", content)
+    default_name = "skillrunes-skill.md" if synthesis == "rewrite" else "skillrunes-delta-skill.md"
+    path = store.write_text_file(write or run_dir / default_name, content)
     console.print(f"[green]✓[/green] Learned skill from {len(summaries)} session(s) → {path}")
 
 
