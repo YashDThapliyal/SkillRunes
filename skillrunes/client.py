@@ -7,7 +7,7 @@ Two execution paths, selected at call time based on environment:
     extract_structured() → tool_use with forced tool_choice.
     generate_text()      → messages.create, returns text content.
 
-  Subprocess path (no ANTHROPIC_API_KEY):
+  Subprocess path (no ANTHROPIC_API_KEY, or SKILLRUNES_BILLING=subscription):
     Invokes `claude --print` using Claude Code's own authentication
     (OAuth / keychain — whatever Claude Code is logged in as).
     extract_structured() → --json-schema flag for structured output.
@@ -29,6 +29,7 @@ import anthropic
 from anthropic.types import TextBlock, ToolParam
 from dotenv import load_dotenv
 
+from skillrunes.billing import resolve_billing_mode, subscription_env
 from skillrunes.config import MODEL
 
 load_dotenv()
@@ -230,26 +231,14 @@ def _require_claude_in_path() -> None:
         raise EnvironmentError(_SUBPROCESS_INSTALL_HINT)
 
 
-_CLAUDE_CODE_ENV_PREFIXES = (
-    "CLAUDECODE",
-    "CLAUDE_CODE_",
-    "CLAUDE_EFFORT",
-    "AI_AGENT",
-)
-
-
 def _subprocess_env() -> dict[str, str]:
-    """Return os.environ with Claude Code nesting-detection vars stripped.
+    """Return the environment for `claude --print` subprocesses.
 
-    When skillrunes is run from inside Claude Code, CLAUDECODE=1 and related
-    vars cause a child `claude --print` process to detect nesting and return
-    empty output.  Clearing them lets the subprocess run as a fresh session.
+    Claude Code nesting markers are stripped so the child runs as a fresh
+    session, and API-billing variables are stripped so the subprocess path
+    always bills the logged-in Claude subscription, never an API key.
     """
-    return {
-        k: v
-        for k, v in os.environ.items()
-        if not any(k.startswith(prefix) for prefix in _CLAUDE_CODE_ENV_PREFIXES)
-    }
+    return subscription_env()
 
 
 def _strip_markdown_fences(text: str) -> str:
@@ -263,14 +252,18 @@ def _strip_markdown_fences(text: str) -> str:
     return stripped
 
 
-def get_client() -> ModelClient:
-    """Return a ModelClient using the best available auth method.
+def get_client(billing: str | None = None) -> ModelClient:
+    """Return a ModelClient for the resolved billing mode.
 
-    Prefers the SDK (ANTHROPIC_API_KEY) for reliability and full feature
-    support.  Falls back to the claude CLI subprocess if no key is set.
+    auto:          SDK when ANTHROPIC_API_KEY is set, else the claude CLI.
+    subscription:  always the claude CLI with API keys stripped.
+    api:           always the SDK; errors if no key is set.
     """
+    mode = resolve_billing_mode(billing)
     api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
-    if api_key:
+    if mode == "api" and not api_key:
+        raise EnvironmentError("SKILLRUNES_BILLING=api requires ANTHROPIC_API_KEY.")
+    if api_key and mode != "subscription":
         sdk = anthropic.Anthropic(api_key=api_key)
         return ModelClient(sdk_client=sdk)
 

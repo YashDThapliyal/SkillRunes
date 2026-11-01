@@ -15,12 +15,14 @@ what_worked, what_failed, patterns.
 """
 
 import json
+from datetime import datetime
 
 from anthropic.types import ToolParam
 
 from skillrunes.client import ModelClient, get_client
 from skillrunes.config import MAX_MESSAGES_PER_CHUNK
 from skillrunes.models import RawMessage, SessionSummary
+from skillrunes.signals import compute_signals
 from skillrunes.utils import now_utc
 
 # ---------------------------------------------------------------------------
@@ -138,6 +140,7 @@ chunks, include it once with the most complete wording.\
 # Tool output and assistant prose can be very long; capping prevents token blowout
 # while keeping the semantically important head of each turn.
 _MAX_TURN_CHARS = 2000
+_MAX_ERROR_CHARS = 300
 
 
 # ---------------------------------------------------------------------------
@@ -148,12 +151,16 @@ def render_transcript(messages: list[RawMessage]) -> str:
     """Flatten messages into a compact role-tagged text block for the API.
 
     Only user/assistant messages are included (noise lines are already filtered
-    by ingest.parse_session_file).  Turns with no text content (tool-only turns
-    with empty content) are skipped.  Each turn is capped at _MAX_TURN_CHARS to
-    prevent token blowout from large tool outputs.
+    by ingest.parse_session_file).  Failed tool results are rendered as
+    [TOOL ERROR] turns so the model can see concrete failures.  Other turns
+    with no text content are skipped.  Each turn is capped at _MAX_TURN_CHARS
+    to prevent token blowout from large tool outputs.
     """
     parts: list[str] = []
     for msg in messages:
+        for result in msg.tool_results:
+            if result.is_error and result.content.strip():
+                parts.append(f"[TOOL ERROR]\n{result.content.strip()[:_MAX_ERROR_CHARS]}")
         text = msg.content.strip()
         if not text:
             continue
@@ -245,6 +252,7 @@ def analyze_session(
     messages: list[RawMessage],
     session_id: str,
     raw_lines: list[dict] | None = None,
+    billing: str | None = None,
 ) -> SessionSummary:
     """Extract a SessionSummary from an agent session's messages via the model client.
 
@@ -262,7 +270,7 @@ def analyze_session(
 
     raw_lines is used only for compaction detection; pass [] or None if unavailable.
     """
-    client = get_client()
+    client = get_client(billing)
     _raw = raw_lines or []
 
     token_count, duration_seconds, message_count, compaction_occurred = (
@@ -292,4 +300,11 @@ def analyze_session(
         compaction_occurred=compaction_occurred,
         analyzed_at=now_utc(),
         message_count=message_count,
+        signals=compute_signals(messages),
+        started_at=_first_timestamp(messages),
     )
+
+
+def _first_timestamp(messages: list[RawMessage]) -> datetime | None:
+    timestamps = [m.timestamp for m in messages if m.timestamp is not None]
+    return min(timestamps) if timestamps else None

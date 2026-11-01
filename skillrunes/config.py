@@ -9,6 +9,14 @@ PROVIDER_ENV_VAR = "SKILLRUNES_PROVIDER"
 DEFAULT_PROVIDER = "claude_code"
 SUPPORTED_PROVIDERS = ("claude_code", "codex")
 
+# Billing for model calls.
+#   auto          API key if ANTHROPIC_API_KEY is set, else the Claude CLI
+#   subscription  always use the logged-in Claude CLI; API keys are stripped
+#   api           always use ANTHROPIC_API_KEY via the SDK
+BILLING_ENV_VAR = "SKILLRUNES_BILLING"
+BILLING_MODES = ("auto", "subscription", "api")
+DEFAULT_BILLING = "auto"
+
 # Claude model used for all API calls.  Update here to change globally.
 MODEL = "claude-sonnet-4-20250514"
 

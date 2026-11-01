@@ -48,3 +48,9 @@ include = [
     "CHANGELOG.md",
     "pyproject.toml",
 ]
+
+[tool.pytest.ini_options]
+markers = [
+    "unit: fast isolated tests",
+    "integration: tests that touch the filesystem or CLI",
+]

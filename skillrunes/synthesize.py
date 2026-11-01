@@ -112,6 +112,7 @@ def generate_skill_file(
     summaries: list[SessionSummary],
     current_skill: str | None,
     memory_seed: str = "",
+    billing: str | None = None,
 ) -> tuple[str, str]:
     """Generate an improved SKILL.md from session summaries and the current version.
 
@@ -127,7 +128,7 @@ def generate_skill_file(
         from the ## What Changed section of the generated content and stored in
         SkillVersion.change_summary for the dashboard diff view.
     """
-    client = get_client()
+    client = get_client(billing)
     user_message = _build_user_message(summaries, current_skill, memory_seed)
     new_content = client.generate_text(SYNTHESIS_PROMPT, user_message)
     change_summary = _extract_change_summary(new_content)

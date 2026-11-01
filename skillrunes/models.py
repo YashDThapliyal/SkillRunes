@@ -26,6 +26,16 @@ class ToolCall(BaseModel):
     input: dict[str, Any] = {}
 
 
+class ToolResult(BaseModel):
+    """Outcome of one tool invocation, reported back to the agent."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    tool_use_id: str = ""
+    is_error: bool = False
+    content: str = ""
+
+
 class Usage(BaseModel):
     """Token usage reported on an assistant message."""
 
@@ -56,6 +66,7 @@ class RawMessage(BaseModel):
     timestamp: datetime | None = None
     content: str = ""
     tool_calls: list[ToolCall] = []
+    tool_results: list[ToolResult] = []
     cwd: str = ""
     usage: Usage | None = None
 
@@ -82,6 +93,7 @@ class RawMessage(BaseModel):
         # plain text with tool_use blocks extracted separately.
         content_text = ""
         tool_calls: list[ToolCall] = []
+        tool_results: list[ToolResult] = []
 
         if isinstance(raw_content, str):
             content_text = raw_content
@@ -101,7 +113,17 @@ class RawMessage(BaseModel):
                             input=block.get("input", {}),
                         )
                     )
-                # thinking and tool_result blocks are skipped intentionally
+                elif block_type == "tool_result":
+                    tool_results.append(
+                        ToolResult(
+                            tool_use_id=block.get("tool_use_id", ""),
+                            is_error=bool(block.get("is_error", False)),
+                            content=_flatten_tool_content(block.get("content", ""))[
+                                :TOOL_RESULT_SNIPPET_CHARS
+                            ],
+                        )
+                    )
+                # thinking blocks are skipped intentionally
             content_text = "\n".join(text_parts)
 
         usage_data = message.get("usage")
@@ -116,9 +138,57 @@ class RawMessage(BaseModel):
             timestamp=data.get("timestamp"),
             content=content_text,
             tool_calls=tool_calls,
+            tool_results=tool_results,
             cwd=data.get("cwd", ""),
             usage=usage,
         )
+
+
+# Tool output can be huge; only the head is kept for error classification.
+TOOL_RESULT_SNIPPET_CHARS = 500
+
+
+def _flatten_tool_content(content: Any) -> str:
+    """Normalise tool_result content (string or list of text blocks) to text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            block.get("text", "")
+            for block in content
+            if isinstance(block, dict) and block.get("type") == "text"
+        )
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Deterministic behaviour signals
+# ---------------------------------------------------------------------------
+
+class SessionSignals(BaseModel):
+    """Behaviour signals computed from a transcript without any model call.
+
+    These are the ground-truth measurements SkillRunes uses to judge whether a
+    skill version actually changed agent behaviour.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    tool_calls: int = 0
+    tool_errors: int = 0
+    retry_loops: int = 0
+    user_corrections: int = 0
+    interruptions: int = 0
+    user_turns: int = 0
+    errors_by_tool: dict[str, int] = {}
+
+    @property
+    def tool_error_rate(self) -> float:
+        return self.tool_errors / self.tool_calls if self.tool_calls else 0.0
+
+    @property
+    def correction_rate(self) -> float:
+        return self.user_corrections / self.user_turns if self.user_turns else 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -146,6 +216,9 @@ class SessionSummary(BaseModel):
     analyzed_at: datetime
     message_count: int = 0
     redaction_report: "RedactionReport | None" = None
+    signals: SessionSignals | None = None
+    started_at: datetime | None = None
+    provider: str = ""
 
 
 # ---------------------------------------------------------------------------

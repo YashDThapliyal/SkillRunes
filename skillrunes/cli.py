@@ -22,13 +22,19 @@ from rich.syntax import Syntax
 from rich.table import Table
 
 import skillrunes.store as store
+from skillrunes.billing import resolve_billing_mode
 from skillrunes.compress import (
     build_ranked_memory_seed,
     compress_skill_content,
     estimate_tokens,
     validate_compression_mode,
 )
-from skillrunes.config import DEFAULT_PROVIDER, PROVIDER_ENV_VAR, SUPPORTED_PROVIDERS
+from skillrunes.config import (
+    BILLING_ENV_VAR,
+    DEFAULT_PROVIDER,
+    PROVIDER_ENV_VAR,
+    SUPPORTED_PROVIDERS,
+)
 from skillrunes.evaluate import evaluate_skill_versions, latest_pair, version_pair
 from skillrunes.exporters import (
     build_agents_update,
@@ -123,6 +129,14 @@ def run(
         "--compression-mode",
         help="Compression mode: concise, balanced, or detailed.",
     ),
+    billing: str | None = typer.Option(
+        None,
+        "--billing",
+        help=(
+            "Model billing: auto, subscription (Claude CLI login, API keys ignored), "
+            f"or api. Defaults to ${BILLING_ENV_VAR} or auto."
+        ),
+    ),
 ) -> None:
     """Analyse new sessions and update SKILL.md."""
 
@@ -133,6 +147,7 @@ def run(
         redaction_level = validate_redaction_level(redaction_level)
         compression_mode = validate_compression_mode(compression_mode)
         _validate_budget(budget_tokens)
+        billing = resolve_billing_mode(billing)
     except ValueError as exc:
         err_console.print(f"[red]Error:[/red] {exc}")
         raise typer.Exit(1) from exc
@@ -159,6 +174,7 @@ def run(
         )
     else:
         console.print(f"[dim]Redaction:[/dim] [bold]{redaction_level}[/bold]")
+    console.print(f"[dim]Billing:[/dim] [bold]{billing}[/bold]")
     if budget_tokens:
         console.print(
             f"[dim]Skill budget:[/dim] [bold]{budget_tokens:,}[/bold] tokens "
@@ -225,8 +241,10 @@ def run(
                 store.archive_raw_session(sid, raw_lines)
 
             try:
-                summary = analyze_session(messages, sid, raw_lines)
-                summary.redaction_report = redaction_report
+                summary = analyze_session(messages, sid, raw_lines, billing=billing)
+                summary = summary.model_copy(
+                    update={"redaction_report": redaction_report, "provider": provider.name}
+                )
             except Exception as exc:
                 err_console.print(
                     f"  [red]Error[/red] extracting {sid[:8]}…: {exc}"
@@ -254,7 +272,7 @@ def run(
     try:
         memory_seed = build_ranked_memory_seed(new_summaries, compression_mode)
         new_skill_content, change_summary = generate_skill_file(
-            new_summaries, current_skill_content, memory_seed
+            new_summaries, current_skill_content, memory_seed, billing=billing
         )
     except Exception as exc:
         err_console.print(f"[red]Error[/red] synthesising SKILL.md: {exc}")
