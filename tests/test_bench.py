@@ -333,3 +333,23 @@ def test_checker_runs_without_api_key(tmp_path: Path, monkeypatch: pytest.Monkey
 
     assert passed and criteria == {"functional": True}
     assert "ANTHROPIC_API_KEY" not in seen["env"]
+
+
+@pytest.mark.unit
+def test_persisted_session_folder_is_removed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    projects = tmp_path / "projects"
+    workspace = tmp_path / "skillrunes-bench-abc_1" / "repo"
+    workspace.mkdir(parents=True)
+    import re
+
+    folder = projects / re.sub(r"[^A-Za-z0-9]", "-", str(workspace.resolve()))
+    folder.mkdir(parents=True)
+    unrelated = projects / "-Users-me-real-project"
+    unrelated.mkdir()
+    monkeypatch.setattr(runner, "CLAUDE_PROJECTS_ROOT", str(projects))
+
+    runner._remove_persisted_sessions(workspace)
+    runner._remove_persisted_sessions(tmp_path / "not-a-bench-dir")
+
+    assert not folder.exists()
+    assert unrelated.exists()

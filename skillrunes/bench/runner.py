@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shlex
 import shutil
 import subprocess
@@ -30,6 +31,7 @@ from typing import Any
 
 import skillrunes.store as store
 from skillrunes.billing import subscription_env
+from skillrunes.config import CLAUDE_PROJECTS_ROOT
 from skillrunes.ingest.claude_code import ClaudeCodeProvider
 from skillrunes.models import (
     AgentRunStats,
@@ -44,6 +46,7 @@ from skillrunes.utils import now_utc
 ALLOWED_TOOLS = "Bash,Read,Edit,Write,Glob,Grep"
 INSTRUCTION_FILE = "CLAUDE.md"
 FEEDBACK_PREFIX = "A reviewer looked at your change:\n\n"
+BENCH_DIR_MARKER = "skillrunes-bench-"
 _IGNORED_COPY = shutil.ignore_patterns("__pycache__", ".pytest_cache", "*.pyc", ".venv")
 _CHECK_TIMEOUT = 300
 
@@ -169,7 +172,7 @@ def stats_from_stream(lines: list[dict[str, Any]]) -> AgentRunStats:
 
 def prepare_workspace(suite: BenchSuite, arm: BenchArm, parent: Path) -> Path:
     """Copy the suite project into a fresh directory and install the arm's file."""
-    workspace = Path(tempfile.mkdtemp(prefix="skillrunes-bench-", dir=parent)) / "repo"
+    workspace = Path(tempfile.mkdtemp(prefix=BENCH_DIR_MARKER, dir=parent)) / "repo"
     shutil.copytree(suite.project_dir, workspace, ignore=_IGNORED_COPY)
     if arm.skill_text.strip():
         (workspace / INSTRUCTION_FILE).write_text(arm.skill_text)
@@ -247,6 +250,8 @@ def execute_run(
             transcript.extend(lines)
             passed, criteria, feedback = run_check(suite, task, workspace)
     finally:
+        if persist:
+            _remove_persisted_sessions(workspace)
         if not config.keep_workspaces:
             shutil.rmtree(workspace.parent, ignore_errors=True)
 
@@ -266,6 +271,21 @@ def execute_run(
         started_at=started,
         finished_at=now_utc(),
     )
+
+
+def _remove_persisted_sessions(workspace: Path) -> None:
+    """Delete the ~/.claude/projects folder Claude Code created for a bench workspace.
+
+    Feedback rounds need session persistence (for --resume); the transcript is
+    already captured in the run directory, so the copy under ~/.claude/projects
+    is removed.  Only folders whose name carries the bench prefix are touched.
+    """
+    folder_name = re.sub(r"[^A-Za-z0-9]", "-", str(workspace.resolve()))
+    if BENCH_DIR_MARKER not in folder_name:
+        return
+    target = Path(CLAUDE_PROJECTS_ROOT).expanduser() / folder_name
+    if target.is_dir():
+        shutil.rmtree(target, ignore_errors=True)
 
 
 def _user_line(text: str, session_id: str) -> dict[str, Any]:
