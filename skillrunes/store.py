@@ -19,6 +19,7 @@ from pathlib import Path
 from skillrunes.config import STORE_DIR_NAME
 from skillrunes.models import (
     EvalResult,
+    ImpactReport,
     ProjectMetrics,
     SessionSummary,
     SkillExport,
@@ -55,6 +56,10 @@ def _evals_dir() -> Path:
 
 def _traces_dir() -> Path:
     return _store_root() / "traces"
+
+
+def _impact_path() -> Path:
+    return _store_root() / "impact.json"
 
 
 # ---------------------------------------------------------------------------
@@ -125,6 +130,20 @@ def archive_raw_session(session_id: str, raw_lines: list[dict]) -> None:
 
     path = _sessions_dir() / f"{session_id}.raw.json"
     _atomic_write(path, json.dumps(raw_lines, indent=2, default=str))
+
+
+def load_raw_session(session_id: str) -> list[dict] | None:
+    """Return archived raw lines for session_id, or None if not archived."""
+    import json
+
+    path = _sessions_dir() / f"{session_id}.raw.json"
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, list) else None
 
 
 # ---------------------------------------------------------------------------
@@ -198,9 +217,8 @@ def load_skill_history() -> list[SkillVersion]:
         return []
 
     versions: list[SkillVersion] = []
-    for path in sorted(skills_dir.glob("v*.md"), key=lambda p: int(p.stem[1:])):
-        if not path.stem[1:].isdigit():
-            continue
+    numbered = [p for p in skills_dir.glob("v*.md") if p.stem[1:].isdigit()]
+    for path in sorted(numbered, key=lambda p: int(p.stem[1:])):
         version_num = int(path.stem[1:])
         metadata_path = _skills_dir() / f"v{version_num}.json"
         if metadata_path.exists():
@@ -264,6 +282,24 @@ def read_project_file(path: Path) -> str:
     if not full_path.exists():
         return ""
     return full_path.read_text(encoding="utf-8")
+
+
+def save_impact_report(report: ImpactReport) -> Path:
+    """Persist the latest skill impact report to .skillrunes/impact.json."""
+    path = _impact_path()
+    _atomic_write(path, report.model_dump_json(indent=2))
+    return path
+
+
+def load_impact_report() -> ImpactReport | None:
+    """Return the saved impact report, or None if absent or unreadable."""
+    path = _impact_path()
+    if not path.exists():
+        return None
+    try:
+        return ImpactReport.model_validate_json(path.read_text())
+    except (OSError, ValueError):
+        return None
 
 
 def save_eval_result(result: EvalResult) -> Path:

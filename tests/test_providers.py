@@ -57,6 +57,9 @@ class _NoSessionsProvider(TranscriptProvider):
     def parse_session_file(self, path: Path) -> tuple[list, list[dict]]:
         return [], []
 
+    def messages_from_raw(self, raw_lines: list[dict]) -> list:
+        return []
+
     def session_id_from_path(self, path: Path) -> str:
         return path.stem
 

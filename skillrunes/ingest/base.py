@@ -29,6 +29,11 @@ class TranscriptProvider(ABC):
         ...
 
     @abstractmethod
+    def messages_from_raw(self, raw_lines: list[dict]) -> list[RawMessage]:
+        """Rebuild messages from archived raw lines (no file access)."""
+        ...
+
+    @abstractmethod
     def session_id_from_path(self, path: Path) -> str:
         """Extract the session identifier from a transcript file path."""
         ...

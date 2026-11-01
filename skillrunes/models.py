@@ -343,3 +343,56 @@ class ProjectMetrics(BaseModel):
     success_rate_series: list[TimePoint] = []
     token_series: list[TimePoint] = []
     top_failure_patterns: list[PatternCount] = []
+
+
+# ---------------------------------------------------------------------------
+# Skill impact (before/after behaviour measurement)
+# ---------------------------------------------------------------------------
+
+class VersionCohort(BaseModel):
+    """Sessions that ran while one skill version was active.
+
+    version 0 is the baseline period before the first SKILL.md existed.
+    metrics maps metric name → mean per session (lower is better for all).
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    version: int
+    active_from: datetime | None = None
+    active_until: datetime | None = None
+    session_ids: list[str] = []
+    metrics: dict[str, float] = {}
+
+
+class MetricDelta(BaseModel):
+    """Change in one metric between two consecutive version cohorts.
+
+    ci_low/ci_high bound the after-minus-before difference of means (95%
+    bootstrap).  verdict is improved / regressed / inconclusive /
+    insufficient_data.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    metric: str
+    before_version: int
+    after_version: int
+    before_mean: float
+    after_mean: float
+    delta: float
+    ci_low: float | None = None
+    ci_high: float | None = None
+    verdict: str = "insufficient_data"
+
+
+class ImpactReport(BaseModel):
+    """Behavioural impact of each skill version on later sessions."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    cohorts: list[VersionCohort] = []
+    deltas: list[MetricDelta] = []
+    unmeasured_sessions: int = 0
+    min_sessions: int = 0
+    generated_at: datetime

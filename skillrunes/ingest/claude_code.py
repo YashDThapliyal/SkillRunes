@@ -131,6 +131,17 @@ class ClaudeCodeProvider(TranscriptProvider):
 
         return messages, raw_lines
 
+    def messages_from_raw(self, raw_lines: list[dict]) -> list[RawMessage]:
+        """Rebuild user/assistant messages from archived raw JSONL dicts."""
+        messages: list[RawMessage] = []
+        for data in raw_lines:
+            if not isinstance(data, dict):
+                continue
+            msg = RawMessage.from_jsonl_line(data)
+            if msg is not None:
+                messages.append(msg)
+        return messages
+
     def session_id_from_path(self, path: Path) -> str:
         """Extract the session UUID from a JSONL file path (the file stem)."""
         return path.stem

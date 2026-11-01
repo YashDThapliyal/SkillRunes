@@ -100,11 +100,19 @@ class CodexProvider(TranscriptProvider):
     def parse_session_file(self, path: Path) -> tuple[list[RawMessage], list[dict]]:
         """Parse a rollout file into (messages, raw_lines)."""
         raw_lines = _read_jsonl(path)
-        session_id = self.session_id_from_path(path)
+        return self._parse(raw_lines, self.session_id_from_path(path)), raw_lines
+
+    def messages_from_raw(self, raw_lines: list[dict]) -> list[RawMessage]:
+        """Rebuild messages from archived rollout records."""
+        return self._parse(raw_lines, "")
+
+    @staticmethod
+    def _parse(raw_lines: list[dict], session_id: str) -> list[RawMessage]:
         parser = _RolloutParser(session_id)
         for record in raw_lines:
-            parser.feed(record)
-        return parser.messages, raw_lines
+            if isinstance(record, dict):
+                parser.feed(record)
+        return parser.messages
 
     def session_id_from_path(self, path: Path) -> str:
         """Return the session UUID embedded at the end of the rollout filename."""

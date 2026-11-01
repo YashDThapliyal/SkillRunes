@@ -254,6 +254,50 @@
   </div>
 </section>
 
+<!-- ── 1b. Skill impact ─────────────────────────────────────────────────── -->
+{% if impact %}
+<section>
+  <h2>Skill impact</h2>
+  <div class="chart-grid-2">
+
+    <div class="panel chart-panel tall">
+      <h3>Behaviour by active skill version</h3>
+      <div class="chart-sub">Mean per session, measured from transcripts (no LLM). Lower is better.</div>
+      <canvas id="impactBar"></canvas>
+    </div>
+
+    <div class="panel chart-panel">
+      <h3>Change vs previous version</h3>
+      <div class="chart-sub">95% bootstrap CI on the difference of means</div>
+      {% if impact.deltas %}
+      <table class="tbl">
+        <thead><tr><th>Transition</th><th>Metric</th><th>Δ</th><th>Verdict</th></tr></thead>
+        <tbody>
+        {% for d in impact.deltas %}
+          <tr>
+            <td>{{ "baseline" if d.before_version == 0 else "v" ~ d.before_version }} → v{{ d.after_version }}</td>
+            <td>{{ d.metric | replace("_", " ") }}</td>
+            <td>{{ "%+.3g" | format(d.delta) }}{% if d.ci_low is not none %} <span class="chart-sub">[{{ "%.3g" | format(d.ci_low) }}, {{ "%.3g" | format(d.ci_high) }}]</span>{% endif %}</td>
+            <td>
+              {% if d.verdict == "improved" %}<span style="color:var(--green)">improved</span>
+              {% elif d.verdict == "regressed" %}<span style="color:var(--red)">regressed</span>
+              {% elif d.verdict == "inconclusive" %}<span style="color:var(--yellow)">inconclusive</span>
+              {% else %}<span class="chart-sub">too few sessions</span>{% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <p class="empty">Need at least two skill versions with sessions to compare.</p>
+      {% endif %}
+      {% if impact.unmeasured %}<p class="chart-sub">{{ impact.unmeasured }} session(s) unmeasured — run <code>skillrunes impact</code> to backfill.</p>{% endif %}
+    </div>
+
+  </div>
+</section>
+{% endif %}
+
 <!-- ── 2. Quality + Failures ─────────────────────────────────────────────── -->
 <section>
   <h2>Session quality &amp; failure patterns</h2>
@@ -461,6 +505,32 @@ const BASE_OPTS = {
   plugins: { legend: { display: false } },
   scales: AXIS,
 };
+
+// ── Skill impact ──
+{% if impact %}
+new Chart(document.getElementById("impactBar"), {
+  type: "bar",
+  data: {
+    labels: {{ impact.labels | tojson }},
+    datasets: [
+      { label: "Tool error rate (%)", data: {{ impact.error_pct | tojson }}, backgroundColor: "#f85149", borderRadius: 3 },
+      { label: "Correction rate (%)", data: {{ impact.correction_pct | tojson }}, backgroundColor: "#d29922", borderRadius: 3 },
+      { label: "Retries / session", data: {{ impact.retries | tojson }}, backgroundColor: "#58a6ff", borderRadius: 3 },
+    ],
+  },
+  options: {
+    ...BASE_OPTS,
+    plugins: {
+      legend: { display: true, labels: { color: "#7d8590", font: { size: 10 } } },
+      tooltip: {
+        callbacks: {
+          afterTitle: (items) => `${ {{ impact.sessions | tojson }}[items[0].dataIndex] } session(s)`,
+        },
+      },
+    },
+  },
+});
+{% endif %}
 
 // ── Donut ──
 new Chart(document.getElementById("donutChart"), {

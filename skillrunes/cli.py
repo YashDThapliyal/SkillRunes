@@ -29,6 +29,7 @@ from skillrunes.compress import (
     estimate_tokens,
     validate_compression_mode,
 )
+from skillrunes.cli_measure import register as register_measurement_commands
 from skillrunes.config import (
     BILLING_ENV_VAR,
     DEFAULT_PROVIDER,
@@ -68,6 +69,9 @@ app = typer.Typer(
 
 doctor_app = typer.Typer(help="Run local health and privacy checks.")
 app.add_typer(doctor_app, name="doctor")
+
+
+register_measurement_commands(app)
 
 
 # ---------------------------------------------------------------------------

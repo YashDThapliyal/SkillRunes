@@ -21,7 +21,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 import skillrunes.store as store
-from skillrunes.models import SessionSummary
+from skillrunes.impact import build_impact_report
+from skillrunes.models import ImpactReport, SessionSummary
 
 app = FastAPI(title="SkillRunes Dashboard")
 
@@ -132,6 +133,30 @@ def _build_analytics(sessions: list[SessionSummary]) -> dict[str, Any]:
     }
 
 
+def _impact_view(report: ImpactReport) -> dict[str, Any]:
+    """Shape the impact report for the template (percentages, labels)."""
+    if not report.cohorts:
+        return {}
+    return {
+        "labels": [
+            "baseline" if c.version == 0 else f"v{c.version}" for c in report.cohorts
+        ],
+        "sessions": [len(c.session_ids) for c in report.cohorts],
+        "error_pct": [round(c.metrics["tool_error_rate"] * 100, 2) for c in report.cohorts],
+        "correction_pct": [round(c.metrics["correction_rate"] * 100, 2) for c in report.cohorts],
+        "retries": [c.metrics["retries_per_session"] for c in report.cohorts],
+        "deltas": [d.model_dump() for d in report.deltas],
+        "unmeasured": report.unmeasured_sessions,
+    }
+
+
+@app.get("/api/impact")
+async def api_impact() -> JSONResponse:
+    store.init_store()
+    report = build_impact_report(store.load_all_summaries(), store.load_skill_history())
+    return JSONResponse(content=report.model_dump(mode="json"))
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -144,13 +169,14 @@ async def index(request: Request) -> HTMLResponse:
     sessions = store.load_all_summaries()
     sessions_desc = sorted(sessions, key=lambda s: s.analyzed_at, reverse=True)
     analytics = _build_analytics(sessions)
+    impact = build_impact_report(sessions, skills)
 
-    return _templates.TemplateResponse("index.html", {
-        "request":    request,
+    return _templates.TemplateResponse(request, "index.html", {
         "metrics":    metrics,
         "skills":     skills,
         "sessions":   sessions_desc,
         "a":          analytics,   # short alias — used heavily in template
+        "impact":     _impact_view(impact),
     })
 
 
