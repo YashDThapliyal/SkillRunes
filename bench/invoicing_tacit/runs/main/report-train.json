@@ -1,0 +1,35 @@
+{
+  "suite": "invoicing_tacit",
+  "split": "train",
+  "arms": [
+    {
+      "arm": "none",
+      "runs": 15,
+      "pass_rate": 1.0,
+      "pass_rate_ci": [
+        1.0,
+        1.0
+      ],
+      "criteria_rates": {
+        "changeset": 1.0,
+        "decimal_money": 1.0,
+        "documented_api": 1.0,
+        "domain_errors": 1.0,
+        "error_prefix": 1.0,
+        "exported_api": 1.0,
+        "functional": 1.0,
+        "legacy_untouched": 1.0,
+        "no_print": 1.0,
+        "tests_added": 1.0
+      },
+      "mean_turns": 4.93,
+      "mean_tokens": 72700.7,
+      "mean_tool_errors": 0.0,
+      "mean_retries": 0.0,
+      "mean_duration_seconds": 9.2,
+      "agent_errors": 0
+    }
+  ],
+  "comparisons": [],
+  "generated_at": "2026-11-01T10:27:15.555560Z"
+}
