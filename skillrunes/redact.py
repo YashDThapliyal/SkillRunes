@@ -118,12 +118,17 @@ def redact_messages_and_raw(
             )
             for tool in msg.tool_calls
         ]
+        safe_tool_results = [
+            result.model_copy(update={"content": apply(result.content, "tool_result.content")})
+            for result in msg.tool_results
+        ]
         safe_messages.append(
             msg.model_copy(
                 update={
                     "content": apply(msg.content, "message.content"),
                     "cwd": apply(msg.cwd, "message.cwd"),
                     "tool_calls": safe_tool_calls,
+                    "tool_results": safe_tool_results,
                 }
             )
         )

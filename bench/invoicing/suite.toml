@@ -1,0 +1,78 @@
+# SkillRunes benchmark suite: "invoicing"
+#
+# A small Python library with house conventions that are visible in the code
+# but never documented.  A hidden reviewer (check.py) enforces them plus a
+# hidden functional test per task.  Train tasks produce transcripts (with
+# reviewer feedback replayed as user corrections) that SkillRunes learns from;
+# test tasks are held out and used to compare instruction-file arms.
+
+[suite]
+name = "invoicing"
+project = "project"
+check = "{python} {suite_dir}/check.py {workspace} {task_id}"
+timeout_seconds = 600
+
+[[tasks]]
+id = "tax"
+split = "train"
+prompt = "Add `add_tax(invoice: Invoice, rate_percent: Decimal) -> Decimal` to invoicing/calc.py. It returns the tax owed on the invoice subtotal at the given percentage rate. A negative rate is invalid input."
+
+[[tasks]]
+id = "discount"
+split = "train"
+prompt = "Add `discounted_subtotal(invoice: Invoice, percent: Decimal) -> Decimal` to invoicing/calc.py: the subtotal after a percentage discount. Percent must be between 0 and 100 inclusive; anything else is invalid input."
+
+[[tasks]]
+id = "due_date"
+split = "train"
+prompt = "Add `due_date(invoice: Invoice) -> date` (issued_on plus due_days) and `is_overdue(invoice: Invoice, today: date) -> bool` to invoicing/calc.py. An invoice is overdue when today is after the due date and a balance is still owed."
+
+[[tasks]]
+id = "payment"
+split = "train"
+prompt = "Add `record_payment(invoice: Invoice, amount: Decimal, received_on: date) -> Invoice` to invoicing/calc.py. It returns a new invoice with the payment appended. The amount must be positive and must not exceed the balance due."
+
+[[tasks]]
+id = "merge"
+split = "train"
+prompt = "Add `merge_invoices(a: Invoice, b: Invoice) -> Invoice` to invoicing/calc.py. The result keeps a's number and header fields and contains the items and payments of both. Merging invoices for different customers is not allowed."
+
+[[tasks]]
+id = "late_fee"
+split = "test"
+prompt = "Add `late_fee(invoice: Invoice, today: date, daily_rate_percent: Decimal) -> Decimal` to invoicing/calc.py. The fee is the balance due times the daily rate (a percentage) times the number of days past the due date (issued_on + due_days). No fee if the invoice is not overdue or is fully paid. A negative rate is invalid input."
+
+[[tasks]]
+id = "refund"
+split = "test"
+prompt = "Add `refund(invoice: Invoice, amount: Decimal, on: date) -> Invoice` to invoicing/calc.py. A refund is recorded as a negative Payment appended to the invoice. The refund amount must be positive and cannot exceed what has been paid."
+
+[[tasks]]
+id = "bulk"
+split = "test"
+prompt = "Line items must have a quantity of at least 1; reject anything lower when a LineItem is created. Also add `bulk_price(unit_price: Decimal, quantity: int) -> Decimal` to invoicing/calc.py that gives 10% off the total when quantity is 100 or more."
+
+[[tasks]]
+id = "credit_note"
+split = "test"
+prompt = "Add `credit_note(invoice: Invoice, reason: str) -> Invoice` to invoicing/calc.py. It returns a new invoice numbered '<original number>-CN' for the same customer whose line items negate the original's, with no payments, and with the reason added to notes. A blank reason is invalid input."
+
+[[tasks]]
+id = "split"
+split = "test"
+prompt = "Add `split_amounts(total: Decimal, parts: int) -> list[Decimal]` to invoicing/calc.py. It splits a money total into `parts` cent amounts that sum exactly to the total, giving any leftover cents to the earliest parts. parts must be at least 1."
+
+[[tasks]]
+id = "csv"
+split = "test"
+prompt = "Add a new module invoicing/export.py with `to_csv(invoice: Invoice) -> str`. Output a header row `description,unit_price,quantity,total` followed by one row per line item, with money formatted to two decimals and proper CSV quoting."
+
+[[tasks]]
+id = "convert"
+split = "test"
+prompt = "Add `convert_total(invoice: Invoice, rate: Decimal) -> Decimal` to invoicing/calc.py that converts the invoice subtotal to another currency at the given exchange rate. The rate must be positive."
+
+[[tasks]]
+id = "customer_balance"
+split = "test"
+prompt = "Add `customer_balance(invoices: list[Invoice], customer: str) -> Decimal` to invoicing/calc.py returning the total balance due across all of that customer's invoices (0.00 if they have none)."

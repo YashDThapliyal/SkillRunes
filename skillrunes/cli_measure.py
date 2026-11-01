@@ -31,6 +31,9 @@ _DEFAULT_PROVIDER_FOR_LEGACY = "claude_code"
 def register(app: typer.Typer) -> None:
     """Attach measurement commands to the main CLI app."""
     app.command("impact")(impact)
+    from skillrunes.cli_bench import bench_app
+
+    app.add_typer(bench_app, name="bench")
 
 
 def impact(

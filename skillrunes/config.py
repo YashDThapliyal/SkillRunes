@@ -35,3 +35,7 @@ CLAUDE_PROJECTS_ROOT = "~/.claude/projects"
 
 # Known local Codex transcript roots, searched recursively for rollout-*.jsonl.
 CODEX_SESSION_ROOTS = ("~/.codex/sessions", "~/.Codex/sessions", "~/.Codex/projects")
+
+# Default model alias for `skillrunes bench` agent runs.  Pinned per run and
+# recorded in every result so reports are comparable.
+BENCH_MODEL = "sonnet"

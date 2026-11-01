@@ -18,6 +18,8 @@ from pathlib import Path
 
 from skillrunes.config import STORE_DIR_NAME
 from skillrunes.models import (
+    BenchReport,
+    BenchRunResult,
     EvalResult,
     ImpactReport,
     ProjectMetrics,
@@ -60,6 +62,11 @@ def _traces_dir() -> Path:
 
 def _impact_path() -> Path:
     return _store_root() / "impact.json"
+
+
+def bench_dir(suite_name: str) -> Path:
+    """Default output directory for a benchmark suite's runs."""
+    return _store_root() / "bench" / suite_name
 
 
 # ---------------------------------------------------------------------------
@@ -300,6 +307,60 @@ def load_impact_report() -> ImpactReport | None:
         return ImpactReport.model_validate_json(path.read_text())
     except (OSError, ValueError):
         return None
+
+
+# ---------------------------------------------------------------------------
+# Benchmark runs (directory may live outside .skillrunes/ when --out is given)
+# ---------------------------------------------------------------------------
+
+BENCH_RESULTS_FILE = "results.jsonl"
+
+
+def append_bench_result(run_dir: Path, result: BenchRunResult) -> None:
+    """Append one run result to <run_dir>/results.jsonl."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    with (run_dir / BENCH_RESULTS_FILE).open("a", encoding="utf-8") as fh:
+        fh.write(result.model_dump_json() + "\n")
+
+
+def load_bench_results(run_dir: Path) -> list[BenchRunResult]:
+    """Load recorded run results, skipping unreadable lines."""
+    path = run_dir / BENCH_RESULTS_FILE
+    if not path.exists():
+        return []
+    results: list[BenchRunResult] = []
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            results.append(BenchRunResult.model_validate_json(line))
+        except ValueError:
+            continue
+    return results
+
+
+def write_bench_transcript(run_dir: Path, name: str, lines: list[dict]) -> Path:
+    """Write a run transcript as JSONL under <run_dir>/transcripts/."""
+    import json
+
+    path = run_dir / "transcripts" / f"{name}.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(path, "".join(json.dumps(line, default=str) + "\n" for line in lines))
+    return path
+
+
+def save_bench_report(run_dir: Path, report: BenchReport) -> Path:
+    """Persist an aggregated benchmark report next to its results."""
+    path = run_dir / f"report-{report.split}.json"
+    _atomic_write(path, report.model_dump_json(indent=2))
+    return path
+
+
+def write_text_file(path: Path, content: str) -> Path:
+    """Write a generated instruction file (e.g. a learned skill) atomically."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write(path, content)
+    return path
 
 
 def save_eval_result(result: EvalResult) -> Path:

@@ -396,3 +396,145 @@ class ImpactReport(BaseModel):
     unmeasured_sessions: int = 0
     min_sessions: int = 0
     generated_at: datetime
+
+
+# ---------------------------------------------------------------------------
+# Replay benchmark (skillrunes bench)
+# ---------------------------------------------------------------------------
+
+class BenchTask(BaseModel):
+    """One task in a benchmark suite."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    id: str
+    prompt: str
+    split: str = "test"
+
+
+class BenchSuite(BaseModel):
+    """A benchmark suite: a template project, a checker, and tasks.
+
+    check is a command template; {python}, {suite_dir}, {workspace} and
+    {task_id} are substituted.  Exit code 0 means the task passed.
+    """
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    name: str
+    suite_dir: str
+    project_dir: str
+    check: str
+    timeout_seconds: int = 600
+    tasks: tuple[BenchTask, ...] = ()
+
+
+class BenchArm(BaseModel):
+    """An experimental condition: which instruction file the agent gets."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    name: str
+    skill_path: str = ""
+    skill_text: str = ""
+
+
+class AgentRunStats(BaseModel):
+    """What one headless agent invocation did, parsed from stream-json."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    session_id: str = ""
+    num_turns: int = 0
+    duration_seconds: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cache_read_tokens: int = 0
+    cache_creation_tokens: int = 0
+    cost_usd_estimate: float = 0.0
+    is_error: bool = False
+    error: str = ""
+    signals: SessionSignals = SessionSignals()
+
+    @property
+    def total_tokens(self) -> int:
+        return (
+            self.input_tokens
+            + self.output_tokens
+            + self.cache_read_tokens
+            + self.cache_creation_tokens
+        )
+
+
+class BenchRunResult(BaseModel):
+    """Outcome of one (task, arm, seed) run, after any feedback rounds."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    task_id: str
+    split: str
+    arm: str
+    seed: int
+    passed: bool
+    first_attempt_passed: bool
+    criteria: dict[str, bool] = {}
+    check_output: str = ""
+    attempts: list[AgentRunStats] = []
+    transcript_path: str = ""
+    model: str = ""
+    started_at: datetime
+    finished_at: datetime
+
+    @property
+    def key(self) -> str:
+        return f"{self.task_id}|{self.arm}|{self.seed}"
+
+
+class ArmSummary(BaseModel):
+    """Aggregate metrics for one arm over all its runs."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    arm: str
+    runs: int
+    pass_rate: float
+    pass_rate_ci: tuple[float, float]
+    criteria_rates: dict[str, float] = {}
+    mean_turns: float = 0.0
+    mean_tokens: float = 0.0
+    mean_tool_errors: float = 0.0
+    mean_retries: float = 0.0
+    mean_duration_seconds: float = 0.0
+    agent_errors: int = 0
+
+
+class ArmComparison(BaseModel):
+    """Paired comparison of a candidate arm against a baseline arm.
+
+    Each delta is mean(candidate - baseline) over (task, seed) pairs with a
+    95% paired-bootstrap CI.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    candidate: str
+    baseline: str
+    pairs: int
+    pass_rate_delta: float
+    pass_rate_ci: tuple[float, float]
+    tokens_delta: float
+    tokens_ci: tuple[float, float]
+    turns_delta: float
+    turns_ci: tuple[float, float]
+
+
+class BenchReport(BaseModel):
+    """Aggregated benchmark results."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    suite: str
+    split: str
+    arms: list[ArmSummary] = []
+    comparisons: list[ArmComparison] = []
+    generated_at: datetime

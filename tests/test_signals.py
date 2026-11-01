@@ -160,3 +160,18 @@ def test_render_transcript_includes_tool_errors() -> None:
     rendered = render_transcript(messages)
 
     assert "[TOOL ERROR]\nModuleNotFoundError: foo" in rendered
+
+
+@pytest.mark.unit
+def test_redaction_covers_tool_result_content() -> None:
+    from pathlib import Path
+
+    from skillrunes.redact import redact_messages_and_raw
+
+    leaked = _result("a", True, "Error: OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz123456 rejected")
+
+    safe, _, report = redact_messages_and_raw([leaked], [], "basic", Path.cwd())
+
+    assert "sk-abcdefghijklmnopqrstuvwxyz" not in safe[0].tool_results[0].content
+    assert safe[0].tool_results[0].is_error is True
+    assert "tool_result.content" in report.redacted_fields

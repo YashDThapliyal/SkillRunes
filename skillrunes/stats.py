@@ -33,6 +33,22 @@ def mean(values: Sequence[float]) -> float:
     return sum(values) / len(values) if values else 0.0
 
 
+def bootstrap_mean(
+    values: Sequence[float],
+    *,
+    resamples: int = DEFAULT_RESAMPLES,
+    confidence: float = DEFAULT_CONFIDENCE,
+    seed: int = DEFAULT_SEED,
+) -> Interval:
+    """CI for the mean of values (e.g. a pass rate over 0/1 outcomes)."""
+    if not values:
+        raise ValueError("bootstrap_mean needs at least one value.")
+    rng = random.Random(seed)
+    samples = sorted(mean(rng.choices(values, k=len(values))) for _ in range(resamples))
+    low, high = _percentile_bounds(samples, confidence)
+    return Interval(mean(values), low, high)
+
+
 def bootstrap_mean_diff(
     before: Sequence[float],
     after: Sequence[float],
