@@ -225,6 +225,26 @@ regressed, inconclusive, or too few sessions). Older summaries are backfilled
 from raw archives with no model calls. This is observational; use
 `skillrunes bench` for a controlled comparison.
 
+## Results
+
+Two held-out experiments, each with 8 test tasks × 5 seeds per arm (160 runs),
+using headless Claude Code (Sonnet) on the bundled suites. Train transcripts
+came from 5 separate tasks; learned files contain no held-out task names.
+
+| Arm | Visible conventions (`invoicing`) | Conventions only in review feedback (`invoicing_tacit`) | Turns (tacit) |
+|---|---|---|---|
+| no instruction file | 0% | 0% | 5.7 |
+| one-shot `/init`-style `CLAUDE.md` | 90% | 0% | 8.4 |
+| SkillRunes (rewrite) | 88% | **100%** | 10.3 |
+| SkillRunes (delta) | 88% | **100%** | **4.3** |
+
+When a convention can be read off the repository, a one-shot scan is as good
+as learning from history. When it lives only in past corrections, SkillRunes
+learns it and the one-shot file cannot: +100 pp pass rate with 4.0 fewer
+turns than the baseline (paired 95% CI 3.3–4.7). Raw results, reports and the
+learned instruction files are in `bench/*/runs/main/`. Caveat: these are
+small, purpose-built suites, not a general coding benchmark.
+
 ## Replay Benchmark
 
 `skillrunes bench` runs the agent headlessly (`claude -p`) on a task suite in
