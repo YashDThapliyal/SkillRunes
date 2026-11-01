@@ -50,7 +50,7 @@ prompt = "Add `refund(invoice: Invoice, amount: Decimal, on: date) -> Invoice` t
 [[tasks]]
 id = "bulk"
 split = "test"
-prompt = "Line items must have a quantity of at least 1; reject anything lower when a LineItem is created. Also add `bulk_price(unit_price: Decimal, quantity: int) -> Decimal` to invoicing/calc.py that gives 10% off the total when quantity is 100 or more."
+prompt = "Line items must have a quantity of at least 1; reject anything lower when a LineItem is created. Also add `bulk_price(unit_price: Decimal, quantity: int) -> Decimal` to invoicing/calc.py that gives 10% off the total when quantity is 100 or more. Do not round the unit price; round only the final result to cents."
 
 [[tasks]]
 id = "credit_note"

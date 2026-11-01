@@ -19,6 +19,9 @@
 
 ### Fixed
 
+- Bench `bulk` task prompt now states the rounding rule. In experiment 1
+  every functional failure (all arms) came from this ambiguity; excluding
+  `bulk`, every instruction-file arm passed 100% of runs.
 - Dashboard index crashed on Starlette >= 1.0 (`TemplateResponse` signature).
 - Redaction now covers tool result content.
 - Skill history loading no longer crashes on non-numeric `v*.md` files.
